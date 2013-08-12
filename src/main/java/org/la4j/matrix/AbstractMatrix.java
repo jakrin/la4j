@@ -16,15 +16,23 @@
  * limitations under the License.
  * 
  * Contributor(s): Evgenia Krivova
+ *                 Pavel Kalaidin
+ *                 Jakob Moellers
+ *                 Ewald Grusk
+ *                 Yuriy Drozd
+ *                 Maxim Samoylov
  * 
  */
 
 package org.la4j.matrix;
 
+import java.util.Random;
+
 import org.la4j.decomposition.MatrixDecompositor;
 import org.la4j.factory.Factory;
 import org.la4j.inversion.MatrixInvertor;
 import org.la4j.matrix.functor.AdvancedMatrixPredicate;
+import org.la4j.matrix.functor.MatrixAccumulator;
 import org.la4j.matrix.functor.MatrixFunction;
 import org.la4j.matrix.functor.MatrixPredicate;
 import org.la4j.matrix.functor.MatrixProcedure;
@@ -42,12 +50,9 @@ public abstract class AbstractMatrix implements Matrix {
     }
 
     protected AbstractMatrix(Factory factory, int rows, int columns) {
-        this.factory = factory;
+        ensureDimensionsAreNotNegative(rows, columns);
 
-        if (rows < 0 || columns < 0) {
-            throw new IllegalArgumentException("Wrong matrix dimensions: " 
-                                               + rows + "x" + columns);
-        }
+        this.factory = factory;
 
         this.rows = rows;
         this.columns = columns;
@@ -57,25 +62,9 @@ public abstract class AbstractMatrix implements Matrix {
     public void assign(double value) {
         for (int i = 0; i < rows; i++) {
             for (int j = 0; j < columns; j++) {
-                unsafe_set(i, j, value);
+                set(i, j, value);
             }
         }
-    }
-
-    @Override
-    public double get(int i, int j) {
-        ensureIndexInRows(i);
-        ensureIndexInColumns(j);
-
-        return unsafe_get(i, j);
-    }
-
-    @Override
-    public void set(int i, int j, double value) {
-        ensureIndexInRows(i);
-        ensureIndexInColumns(j);
-
-        unsafe_set(i, j, value);
     }
 
     @Override
@@ -96,31 +85,29 @@ public abstract class AbstractMatrix implements Matrix {
     @Override
     public Vector getRow(int i, Factory factory) {
         ensureFactoryIsNotNull(factory);
-        ensureIndexInRows(i);
-
+    
         Vector result = factory.createVector(columns);
 
         for (int j = 0; j < columns; j++) {
-            result.unsafe_set(j, unsafe_get(i, j));
+            result.set(j, get(i, j));
         }
 
         return result;
     }
 
     @Override
-    public Vector getColumn(int i) {
-        return getColumn(i, factory);
+    public Vector getColumn(int j) {
+        return getColumn(j, factory);
     }
 
     @Override
-    public Vector getColumn(int i, Factory factory) {
+    public Vector getColumn(int j, Factory factory) {
         ensureFactoryIsNotNull(factory);
-        ensureIndexInColumns(i);
 
         Vector result = factory.createVector(rows);
 
-        for (int j = 0; j < rows; j++) {
-            result.unsafe_set(j, unsafe_get(j, i));
+        for (int i = 0; i < rows; i++) {
+            result.set(i, get(i, j));
         }
 
         return result;
@@ -128,7 +115,6 @@ public abstract class AbstractMatrix implements Matrix {
 
     @Override
     public void setRow(int i, Vector row) {
-        ensureIndexInRows(i);
 
         if (row == null) {
             throw new IllegalArgumentException("Row can't be null.");
@@ -140,13 +126,12 @@ public abstract class AbstractMatrix implements Matrix {
         }
 
         for (int j = 0; j < row.length(); j++) {
-            unsafe_set(i, j, row.unsafe_get(j));
+            set(i, j, row.get(j));
         }
     }
 
     @Override
-    public void setColumn(int i, Vector column) {
-        ensureIndexInColumns(i);
+    public void setColumn(int j, Vector column) {
 
         if (column == null) {
             throw new IllegalArgumentException("Column can't be null.");
@@ -157,16 +142,13 @@ public abstract class AbstractMatrix implements Matrix {
                                                + column.length());
         }
 
-        for (int j = 0; j < column.length(); j++) {
-            unsafe_set(j, i, column.unsafe_get(j));
+        for (int i = 0; i < column.length(); i++) {
+            set(i, j, column.get(i));
         }
     }
 
     @Override
     public void swapRows(int i, int j) {
-        ensureIndexInRows(i);
-        ensureIndexInRows(j);
-
         if (i != j) {
             Vector ii = getRow(i);
             Vector jj = getRow(j);
@@ -178,9 +160,6 @@ public abstract class AbstractMatrix implements Matrix {
 
     @Override
     public void swapColumns(int i, int j) {
-        ensureIndexInColumns(i);
-        ensureIndexInColumns(j);
-
         if (i != j) {
             Vector ii = getColumn(i);
             Vector jj = getColumn(j);
@@ -203,7 +182,25 @@ public abstract class AbstractMatrix implements Matrix {
 
         for (int i = 0; i < rows; i++) {
             for (int j = 0; j < columns; j++) {
-                result.unsafe_set(j, i, unsafe_get(i, j));
+                result.set(j, i, get(i, j));
+            }
+        }
+
+        return result;
+    }
+
+    public Matrix rotate() {
+        return rotate(factory);
+    }
+
+    public Matrix rotate(Factory factory) {
+        ensureFactoryIsNotNull(factory);
+
+        Matrix result = factory.createMatrix(columns, rows);
+
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < columns; j++) {
+                result.set(j, rows - 1 - i, get(i, j));
             }
         }
 
@@ -212,67 +209,135 @@ public abstract class AbstractMatrix implements Matrix {
 
     @Override
     public double determinant() {
-        return triangularize().product();
+        if (rows != columns) {
+            throw new IllegalStateException("Can't compute determinant for " +
+                                            "non-square matrix.");
+        }
+
+        if (rows == 0) {
+            return 0.0;
+        } else if (rows == 1) {
+            return get(0, 0);
+        } else if (rows == 2) {
+            return get(0, 0) * get(1, 1) -
+                   get(0, 1) * get(1, 0);
+        } else if (rows == 3) {
+            return get(0, 0) * get(1, 1) * get(2, 2) +
+                   get(0, 1) * get(1, 2) * get(2, 0) +
+                   get(0, 2) * get(1, 0) * get(2, 1) -
+                   get(0, 2) * get(1, 1) * get(2, 0) -
+                   get(0, 1) * get(1, 0) * get(2, 2) -
+                   get(0, 0) * get(1, 2) * get(2, 1);
+        }
+
+        // TODO: switch back to Crout
+        // TODO: for Yury Drozd
+        // TODO: add more test for determinant in AbstractMatrixTest
+        //       for matrices 6x6, 5x5, 2x2, 1x1, 7x7, 10x10
+        //       and use Matrices.EPS * 1000 tollerance
+        return decompose(Matrices.LU_DECOMPOSITOR)[1].diagonalProduct();
     }
 
     @Override
     public int rank() {
+
         if ((columns == 0) || (rows == 0)) {
             return 0;
-        }     
-        int x = 0; 
-        int y = 0;
-        int endi = (columns > rows)? rows : columns;
-        for(int i = 0; i < endi; i++) {
-            if (Math.abs(unsafe_get(i, i)) <= Matrices.EPS) {
-                boolean c = false;
-                for (int k = i; k < rows; k++){
-                    for (int l = i; l < columns; l++){
-                        if (Math.abs(unsafe_get(k, l)) > Matrices.EPS){
-                            y = k;
-                            x = l;
-                            c = true;
-                            break;
-                        }         
-                    }
-                    if (c) {
-                        break;
+        }
+
+        Matrix copy = copy();
+
+        int min = (columns > rows)? rows : columns;
+
+        for (int k = 0; k < min; k++) {
+
+            if (Math.abs(copy.get(k, k)) <= Matrices.EPS) {
+
+                int x = 0; 
+                int y = 0;
+
+                boolean nz = false;
+
+                for (int i = k; i < rows && !nz; i++) {
+                    for (int j = k; j < columns && !nz; j++) {
+
+                        if (Math.abs(copy.get(i, j)) > Matrices.EPS) {
+                            y = i;
+                            x = j;
+
+                            nz = true;
+                        }
                     }
                 }
-                if (!c) {
+
+                if (!nz) {
                     break;
                 }
-                if (i != y) {
-                    swapRows(i, y);
+
+                if (k != y) {
+                    copy.swapRows(k, y);
                 }
-                if (i != x) {
-                    swapColumns(i, x);
+
+                if (k != x) {
+                    copy.swapColumns(k, x);
                 }
             }
 
-            for (x = i; x < columns; x++) {
-                unsafe_set(i, x, unsafe_get(i, x) / unsafe_get(i, i));
+            for (int j = k; j < columns; j++) {
+                copy.update(k, j, Matrices.asDivFunction(copy.get(k, k)));
             }
-            for (y = i + 1; y < rows; y++) {
-                for (x = i; x < columns; x++)
-                    unsafe_set(y, x, unsafe_get(y, x) - unsafe_get(i, x) * unsafe_get(y, i));
+
+            for (int i = k + 1; i < rows; i++) {
+                for (int j = k; j < columns; j++) {
+                    copy.update(i, j, Matrices.asMinusFunction(copy.get(k, j) 
+                                      * copy.get(i, k)));
+                }
             }
-            for (x = i + 1; x < columns; x++) {
-                for (y = i; y < rows; y++)
-                    unsafe_set(y, x, unsafe_get(y, x) - unsafe_get(y, i) * unsafe_get(i, x));
+
+            for (int j = k + 1; j < columns; j++) {
+                for (int i = k; i < rows; i++) {
+                    copy.update(i, j, Matrices.asMinusFunction(copy.get(i, k)
+                                * copy.get(k, j))); 
+                }
             }
         }
+
         int result = 0;
-        for (int i = 0; i < endi; i++)
-            if (Math.abs(unsafe_get(i, i)) <= Matrices.EPS) {
-                break;
-            }
-            else {
-                result++;
-            }  
+
+        while (result < min 
+              && Math.abs(copy.get(result, result)) > Matrices.EPS) {
+
+            result++;
+        }
+
         return result;
     }
-    
+
+    public Matrix power(int n) {
+        return power(n, factory);
+    }
+
+    public Matrix power(int n, Factory factory) {
+        if (n < 0) {
+            throw new IllegalArgumentException(
+                    "The exponent has to be larger than 0.");
+        }
+
+        Matrix result = factory.createIdentityMatrix(rows);
+        Matrix that = this;
+
+        while (n > 0) {
+            if (n % 2 == 1) {
+                result = result.multiply(that);
+            }
+
+            n /= 2;
+            that = that.multiply(that);
+        }
+
+        return result;
+    }
+
     @Override
     public Matrix multiply(double value) {
         return multiply(value, factory);
@@ -286,7 +351,7 @@ public abstract class AbstractMatrix implements Matrix {
 
         for (int i = 0; i < rows; i++) {
             for (int j = 0; j < columns; j++) {
-                result.unsafe_set(i, j, unsafe_get(i, j) * value);
+                result.set(i, j, get(i, j) * value);
             }
         }
 
@@ -311,31 +376,23 @@ public abstract class AbstractMatrix implements Matrix {
                                                 + vector.length());
         }
 
-       return unsafe_multiply(vector, factory);
-    }
-
-    @Override
-    public Vector unsafe_multiply(Vector vector) {
-        return unsafe_multiply(vector, factory);
-    }
-
-    @Override
-    public Vector unsafe_multiply(Vector vector, Factory factory) {
-
-    	Vector result = factory.createVector(columns);
+        Vector result = factory.createVector(rows);
 
         for (int i = 0; i < rows; i++) {
+
             double summand = 0;
+
             for (int j = 0; j < columns; j++) {
-                summand += unsafe_get(i, j) * vector.unsafe_get(j);
+                summand += get(i, j) * vector.get(j);
             }
-            result.unsafe_set(i, summand);
+
+            result.set(i, summand);
         }
 
         return result;
     }
 
-	@Override
+    @Override
     public Matrix multiply(Matrix matrix) {
         return multiply(matrix, factory);
     }
@@ -354,33 +411,21 @@ public abstract class AbstractMatrix implements Matrix {
                                                + matrix.columns());
         }
 
-        return unsafe_multiply(matrix, factory);
-    }
-
-    @Override
-    public Matrix unsafe_multiply(Matrix matrix) {
-        return unsafe_multiply(matrix, factory);
-    }
-
-    @Override
-    public Matrix unsafe_multiply(Matrix matrix, Factory factory) {
-
         Matrix result = factory.createMatrix(rows, matrix.columns());
 
         for (int j = 0; j < matrix.columns(); j++) {
 
-            Vector thatColumn = matrix.getColumn(j);
+            Vector column = matrix.getColumn(j);
 
             for (int i = 0; i < rows; i++) {
 
-                Vector thisRow = getRow(i);
                 double summand = 0;
 
                 for (int k = 0; k < columns; k++) {
-                    summand += thisRow.unsafe_get(k) 
-                               * thatColumn.unsafe_get(k);
+                    summand += get(i, k) * column.get(k);
                 }
-                result.unsafe_set(i, j, summand);
+
+                result.set(i, j, summand);
             }
         }
 
@@ -404,17 +449,27 @@ public abstract class AbstractMatrix implements Matrix {
 
     @Override
     public Matrix subtract(Matrix matrix, Factory factory) {
-        return add(matrix.multiply(-1.0), factory);
-    }
+        ensureFactoryIsNotNull(factory);
 
-    @Override
-    public Matrix unsafe_subtract(Matrix matrix) {
-        return unsafe_subtract(matrix, factory);
-    }
+        if (matrix == null) {
+            throw new IllegalArgumentException("Matrix can't be null.");
+        }
 
-    @Override
-    public Matrix unsafe_subtract(Matrix matrix, Factory factory) {
-        return unsafe_add(matrix.multiply(-1.0), factory);
+        if (rows != matrix.rows() || columns != matrix.columns()) {
+            throw new IllegalArgumentException("Wrong matrix dimensions: "
+                                               + matrix.rows() + "x" 
+                                               + matrix.columns());
+        }
+
+        Matrix result = blank(factory);
+
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < columns; j++) {
+                result.set(i, j, get(i, j) - matrix.get(i, j));
+            }
+        }
+
+        return result;
     }
 
     @Override
@@ -430,7 +485,7 @@ public abstract class AbstractMatrix implements Matrix {
 
         for (int i = 0; i < rows; i++) {
             for (int j = 0; j < columns; j++) {
-                result.unsafe_set(i, j, unsafe_get(i, j) + value);
+                result.set(i, j, get(i, j) + value);
             }
         }
 
@@ -456,23 +511,11 @@ public abstract class AbstractMatrix implements Matrix {
                                                + matrix.columns());
         }
 
-        return unsafe_add(matrix, factory); 
-    }
-
-    @Override
-    public Matrix unsafe_add(Matrix matrix) {
-        return unsafe_add(matrix, factory);
-    }
-
-    @Override
-    public Matrix unsafe_add(Matrix matrix, Factory factory) {
-
         Matrix result = blank(factory);
 
         for (int i = 0; i < rows; i++) {
             for (int j = 0; j < columns; j++) {
-                result.unsafe_set(i, j, unsafe_get(i, j) 
-                                  + matrix.unsafe_get(i, j));
+                result.set(i, j, get(i, j) + matrix.get(i, j));
             }
         }
 
@@ -480,19 +523,49 @@ public abstract class AbstractMatrix implements Matrix {
     }
 
     @Override
-    public Matrix div(double value) {
-        return div(value, factory);
+    public Matrix divide(double value) {
+        return divide(value, factory);
     }
 
     @Override
-    public Matrix div(double value, Factory factory) {
+    public Matrix divide(double value, Factory factory) {
         return multiply(1.0 / value, factory);
+    }
+
+    @Override
+    public Matrix kroneckerProduct(Matrix matrix) {
+        return kroneckerProduct(matrix, factory);
+    }
+
+    @Override
+    public Matrix kroneckerProduct(Matrix matrix, Factory factory) {
+        ensureFactoryIsNotNull(factory);
+
+        if (matrix == null) {
+            throw new IllegalArgumentException("Matrix can't be null.");
+        }
+
+        int n = rows() * matrix.rows();
+        int m = columns() * matrix.columns();
+
+        Matrix result = factory.createMatrix(n, m);
+
+        int p = matrix.rows();
+        int q = matrix.columns();
+
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < m; j++) {
+                result.set(i, j, get(i / p, j / q) * matrix.get(i % p, j % q));
+            }
+        }
+
+        return result;
     }
 
     @Override
     public double trace() {
 
-        double result = 0;
+        double result = 0.0;
 
         for (int i = 0; i < rows; i++) {
             result += get(i, i);
@@ -502,15 +575,56 @@ public abstract class AbstractMatrix implements Matrix {
     }
 
     @Override
-    public double product() {
+    public double diagonalProduct() {
 
-        double result = 1;
+        double result = 1.0;
 
         for (int i = 0; i < rows; i++) {
             result *= get(i, i);
         }
 
         return result;
+    }
+
+    @Override
+    public double product() {
+        return fold(Matrices.asProductAccumulator(1));
+    }
+
+    @Override
+    public Matrix hadamardProduct(Matrix matrix) {
+        return hadamardProduct(matrix, factory);
+    }
+
+    @Override
+    public Matrix hadamardProduct(Matrix matrix, Factory factory) {
+        ensureFactoryIsNotNull(factory);
+
+        if (matrix == null) {
+            throw new IllegalArgumentException("Matrix can not be null.");
+        }
+
+        if ((columns != matrix.columns()) || (rows != matrix.rows())) {
+            throw new IllegalArgumentException(
+                    "Matrices dimensions are not equal: " + matrix.rows() + "x"
+                            + matrix.columns() + " not equal to " + rows + "x"
+                            + columns);
+        }
+
+        Matrix result = factory.createMatrix(rows, columns);
+        
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < columns; j++) {
+                result.set(i, j, matrix.get(i, j) * get(i, j));
+            }
+        }
+        
+        return result;
+    }
+
+    @Override
+    public double sum() {
+        return fold(Matrices.asSumAccumulator(0));
     }
 
     @Override
@@ -533,14 +647,13 @@ public abstract class AbstractMatrix implements Matrix {
         for (int i = 0; i < rows; i++) {
             for (int j = i + 1; j < rows; j++) {
 
-                double c = unsafe_get(j, i) / unsafe_get(i, i);
+                double c = get(j, i) / get(i, i);
 
                 for (int k = i; k < columns; k++) {
                     if (k == i) {
-                        result.unsafe_set(j, k, 0.0);
+                        result.set(j, k, 0.0);
                     } else {
-                        result.unsafe_set(j, k, unsafe_get(j, k) 
-                                          - (unsafe_get(i, k) * c));
+                        result.set(j, k, get(j, k) - (get(i, k) * c));
                     }
                 }
             }
@@ -596,10 +709,169 @@ public abstract class AbstractMatrix implements Matrix {
     }
 
     @Override
+    public Matrix resize(int rows, int columns) {
+        return resize(rows, columns, factory);
+    }
+
+    @Override
+    public Matrix resizeRows(int rows) {
+        return resize(rows, columns, factory);
+    }
+
+    @Override
+    public Matrix resizeRows(int rows, Factory factory) {
+        return resize(rows, columns, factory);
+    }
+
+    @Override
+    public Matrix resizeColumns(int columns) {
+        return resize(rows, columns, factory);
+    }
+
+    @Override
+    public Matrix resizeColumns(int columns, Factory factory) {
+        return resize(rows, columns, factory);
+    }
+
+    @Override
+    public Matrix resize(int rows, int columns, Factory factory) {
+        ensureFactoryIsNotNull(factory);
+
+        Matrix result = factory.createMatrix(rows, columns);
+
+        for (int i = 0; i < Math.min(rows, this.rows); i++) {
+            for (int j = 0; j < Math.min(columns, this.columns); j++) {
+                result.set(i, j, get(i, j));
+            }
+        }
+
+        return result;
+    }
+    
+    public Matrix shuffle() {
+        return shuffle(factory);
+    }
+
+    public Matrix shuffle(Factory factory) {
+        ensureFactoryIsNotNull(factory);
+
+        Matrix result = copy(factory);
+
+        // Conduct Fisher-Yates shuffle
+        Random rnd = new Random();
+
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < columns; j++) {
+                int ii = rnd.nextInt(rows - i) + i;
+                int jj = rnd.nextInt(columns - j) + j;
+
+                double a = result.get(ii, jj);
+                result.set(ii, jj, result.get(i, j));
+                result.set(i, j, a);
+            }
+        }
+
+        return result;
+    }
+
+    @Override
+    public Matrix slice(int fromRow, int fromColumn, int untilRow,
+            int untilColumn) {
+
+        return slice(fromRow, fromColumn, untilRow, untilColumn, factory);
+    }
+
+    @Override
+    public Matrix slice(int fromRow, int fromColumn, int untilRow,
+            int untilColumn, Factory factory) {
+
+        ensureFactoryIsNotNull(factory);
+
+        Matrix result = factory.createMatrix(untilRow - fromRow, 
+                                             untilColumn - fromColumn);
+
+        for (int i = fromRow; i < untilRow; i++) {
+            for (int j = fromColumn; j < untilColumn; j++) {
+                result.set(i - fromRow, j - fromColumn, get(i, j));
+            }
+        }
+
+        return result;
+    }
+
+    @Override
+    public Matrix sliceTopLeft(int untilRow, int untilColumn) {
+        return slice(0, 0, untilRow, untilColumn, factory);
+    }
+
+    @Override
+    public Matrix sliceTopLeft(int untilRow, int untilColumn, Factory factory) {
+        return slice(0, 0, untilRow, untilColumn, factory);
+    }
+
+    @Override
+    public Matrix sliceBottomRight(int fromRow, int fromColumn) {
+        return slice(fromRow, fromColumn, rows, columns, factory);
+    }
+
+    @Override
+    public Matrix sliceBottomRight(int fromRow, int fromColumn, Factory fac) {
+        return slice(fromRow, fromColumn, rows, columns, factory);
+    }
+
+    @Override
+    public Factory factory() {
+        return factory;
+    }
+
+    @Override
     public void each(MatrixProcedure procedure) {
         for (int i = 0; i < rows; i++) {
             for (int j = 0; j < columns; j++) {
-                procedure.apply(i, j, unsafe_get(i, j));
+                procedure.apply(i, j, get(i, j));
+            }
+        }
+    }
+
+    @Override
+    public void eachInRow(int i,MatrixProcedure procedure) {
+        for (int j = 0; j < columns; j++) {
+            procedure.apply(i, j, get(i, j));
+        }
+    }
+
+    @Override
+    public void eachInColumn(int j,MatrixProcedure procedure) {
+        for (int i = 0; i < rows; i++) {
+            procedure.apply(i, j, get(i, j));
+        }
+    }
+
+    @Override
+    public void eachNonZero(MatrixProcedure procedure) {
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < columns; j++) {
+                if (Math.abs(get(i,j)) > Matrices.EPS) {
+                    procedure.apply(i, j, get(i, j));
+                }
+            }
+        }
+    }
+
+    @Override
+    public void eachNonZeroInRow(int i, MatrixProcedure procedure) {
+        for (int j = 0; j < columns; j++) {
+            if (Math.abs(get(i, j)) > Matrices.EPS) {
+                procedure.apply(i, j, get(i, j));
+            }
+        }
+    }
+
+    @Override
+    public void eachNonZeroInColumn(int j, MatrixProcedure procedure) {
+        for (int i = 0; i < rows; i++) {
+            if (Math.abs(get(i, j)) > Matrices.EPS) {
+                procedure.apply(i, j, get(i, j));
             }
         }
     }
@@ -611,16 +883,76 @@ public abstract class AbstractMatrix implements Matrix {
 
     @Override
     public Matrix transform(MatrixFunction function, Factory factory) {
-
         Matrix result = blank(factory);
 
         for (int i = 0; i < rows; i++) {
             for (int j = 0; j < columns; j++) {
-                result.unsafe_set(i, j, function.evaluate(i, j, unsafe_get(i, j)));
+                result.set(i, j, function.evaluate(i, j, get(i, j)));
             }
         }
 
         return result;
+    }
+
+    @Override
+    public Matrix transform(int i, int j, MatrixFunction function) {
+        return transform(i, j, function, factory);
+    }
+
+    @Override
+    public Matrix transform(int i, int j, MatrixFunction function,
+            Factory factory) {
+
+        Matrix result = copy(factory);
+        result.set(i, j, function.evaluate(i, j, result.get(i, j)));
+
+        return result;
+    }
+
+    @Override
+    public void update(MatrixFunction function) {
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < columns; j++) {
+                set(i, j, function.evaluate(i, j, get(i, j)));
+            }
+        }
+    }
+
+    @Override
+    public void update(int i, int j, MatrixFunction function) {
+        set(i, j, function.evaluate(i, j, get(i, j)));
+    }
+
+    @Override
+    public double fold(MatrixAccumulator accumulator) {
+
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < columns; j++) {
+                accumulator.update(i, j, get(i, j));
+            }
+        }
+
+        return accumulator.accumulate();
+    }
+
+    @Override
+    public double foldRow(int i, MatrixAccumulator accumulator) {
+
+        for (int j = 0; j < columns; j++) {
+            accumulator.update(i, j, get(i, j));
+        }
+
+        return accumulator.accumulate();
+    }
+
+    @Override
+    public double foldColumn(int j, MatrixAccumulator accumulator) {
+
+        for (int i = 0; i < rows; i++) {
+            accumulator.update(i, j, get(i, j));
+        }
+
+        return accumulator.accumulate();
     }
 
     @Override
@@ -632,11 +964,16 @@ public abstract class AbstractMatrix implements Matrix {
 
         for (int i = 0; result && i < rows; i++) {
             for (int j = 0; result && j < columns; j++) {
-                result = result && predicate.test(i, j, unsafe_get(i, j));
+                result = result && predicate.test(i, j, get(i, j));
             }
         }
 
         return result;
+    }
+
+    @Override
+    public Matrix unsafe() {
+        return this;
     }
 
     @Override
@@ -646,7 +983,7 @@ public abstract class AbstractMatrix implements Matrix {
 
         for (int i = 0; i < rows; i++) {
             for (int j = 0; j < columns; j++) {
-                long value = (long) unsafe_get(i, j);
+                long value = (long) get(i, j);
                 result = 37 * result + (int) (value ^ (value >>> 32));
             }
         }
@@ -676,8 +1013,8 @@ public abstract class AbstractMatrix implements Matrix {
 
         for (int i = 0; result && i < rows; i++) {
             for (int j = 0; result && j < columns; j++) {
-                double a = unsafe_get(i, j);
-                double b = matrix.unsafe_get(i, j);
+                double a = get(i, j);
+                double b = matrix.get(i, j);
 
                 double diff = Math.abs(a - b);
 
@@ -700,8 +1037,9 @@ public abstract class AbstractMatrix implements Matrix {
 
         for (int i = 0; i < rows; i++) {
             for (int j = 0; j < columns; j++) {
-                long value = (long) unsafe_get(i, j);
-                int size = Long.toString(value).length() + precision + 2;
+                double value = get(i, j);
+                int size = String.valueOf((long) value).length() 
+                           + precision + (value < 0 && value > -1.0 ? 1 : 0) + 2;
                 formats[j] = size > formats[j] ? size : formats[j];
             }
         }
@@ -711,7 +1049,7 @@ public abstract class AbstractMatrix implements Matrix {
         for (int i = 0; i < rows; i++) {
             for (int j = 0; j < columns; j++) {
                 sb.append(String.format("%" + Integer.toString(formats[j])
-                        + "." + precision + "f", unsafe_get(i, j)));
+                        + "." + precision + "f", get(i, j)));
             }
             sb.append("\n");
         }
@@ -725,16 +1063,10 @@ public abstract class AbstractMatrix implements Matrix {
         }
     }
 
-    protected void ensureIndexInRows(int i) {
-        if (i >= rows || i < 0) {
-            throw new IllegalArgumentException("Row index out of bounds: " + i);
-        }
-    }
-
-    protected void ensureIndexInColumns(int i) {
-        if (i >= columns || i < 0) {
-            throw new IllegalArgumentException("Column index out of bounds: " 
-                                               + i);
+    protected void ensureDimensionsAreNotNegative(int rows, int columns) {
+        if (rows < 0 || columns < 0) {
+            throw new IllegalArgumentException("Wrong matrix dimensions: " 
+                                               + rows + "x" + columns);
         }
     }
 }

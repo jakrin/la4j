@@ -28,8 +28,10 @@ import java.util.Locale;
 import java.util.StringTokenizer;
 
 import org.la4j.factory.Factory;
+import org.la4j.matrix.Matrices;
 import org.la4j.matrix.Matrix;
 import org.la4j.vector.Vector;
+import org.la4j.vector.Vectors;
 
 public class SymbolSeparatedStream extends AbstractStream 
     implements MatrixStream, VectorStream {
@@ -55,6 +57,11 @@ public class SymbolSeparatedStream extends AbstractStream
     }
 
     @Override
+    public Vector readVector() throws IOException {
+        return readVector(Vectors.DEFAULT_FACTORY);
+    }
+
+    @Override
     public Vector readVector(Factory factory) throws IOException {
         ensureReaderInitialized();
 
@@ -66,13 +73,13 @@ public class SymbolSeparatedStream extends AbstractStream
         int length = 0;
         while (tokenizer.hasMoreTokens()) {
             if (length == vector.length()) {
-                vector.resize((vector.length() * 3) / 2 + 1);
+                vector = vector.resize((vector.length() * 3) / 2 + 1);
             }
 
-            vector.unsafe_set(length++, Double.valueOf(tokenizer.nextToken()));
+            vector.set(length++, Double.valueOf(tokenizer.nextToken()));
         }
 
-        vector.resize(length);
+        vector = vector.resize(length);
 
         closeReader();
         return vector;
@@ -85,7 +92,7 @@ public class SymbolSeparatedStream extends AbstractStream
         StringBuilder builder = new StringBuilder();
 
         for (int i = 0; i < vector.length(); i++) {
-            double value = vector.unsafe_get(i);
+            double value = vector.get(i);
             builder.append(String.format(Locale.US, "%.12f", value));
             if (i + 1 < vector.length()) {
                 builder.append(separator);
@@ -99,6 +106,11 @@ public class SymbolSeparatedStream extends AbstractStream
     }
 
     @Override
+    public Matrix readMatrix() throws IOException {
+        return readMatrix(Matrices.DEFAULT_FACTORY);
+    }
+
+    @Override
     public Matrix readMatrix(Factory factory) throws IOException {
         ensureReaderInitialized();
 
@@ -109,7 +121,7 @@ public class SymbolSeparatedStream extends AbstractStream
                 line = reader.readLine(), rows++) {
 
             if (rows == matrix.rows()) {
-                matrix.resize((matrix.rows() * 3) / 2  + 1, matrix.columns());
+                matrix = matrix.resizeRows((matrix.rows() * 3) / 2  + 1);
             }
 
             StringTokenizer tokenizer = new StringTokenizer(line, separator);
@@ -117,16 +129,16 @@ public class SymbolSeparatedStream extends AbstractStream
             int j = 0;
             while (tokenizer.hasMoreTokens()) {
                 if (j == matrix.columns()) {
-                    matrix.resize(matrix.rows(), (matrix.columns() * 3) / 2 + 1);
+                    matrix = matrix.resizeColumns((matrix.columns() * 3) / 2 + 1);
                 }
                 double value = Double.valueOf(tokenizer.nextToken());
-                matrix.unsafe_set(rows, j++, value);
+                matrix.set(rows, j++, value);
             }
 
             columns = j > columns ? j : columns;
         }
 
-        matrix.resize(rows, columns);
+        matrix = matrix.resize(rows, columns);
 
         closeReader();
         return matrix;
@@ -141,7 +153,7 @@ public class SymbolSeparatedStream extends AbstractStream
             StringBuilder builder = new StringBuilder();
 
             for (int j = 0; j < matrix.columns(); j++) {
-                double value = matrix.unsafe_get(i, j);
+                double value = matrix.get(i, j);
                 builder.append(String.format(Locale.US, "%.12f", value));
                 if (j + 1 < matrix.columns()) {
                     builder.append(separator);

@@ -19,30 +19,41 @@
  * 
  */
 
-package org.la4j.matrix.source;
+package org.la4j.vector.source;
 
-import org.la4j.matrix.Matrix;
+import java.io.IOException;
 
-public class UnsafeMatrixSource implements MatrixSource {
+import org.la4j.io.VectorStream;
+import org.la4j.vector.Vector;
 
-    private Matrix matrix;
+public class StreamVectorSource implements VectorSource {
 
-    public UnsafeMatrixSource(Matrix matrix) {
-        this.matrix = matrix;
+    private Vector vector;
+    private IOException exception;
+
+    public StreamVectorSource(VectorStream stream) {
+        try {
+            this.vector = stream.readVector();
+        } catch (IOException exception) {
+            this.exception = exception;
+        }
     }
 
     @Override
-    public double get(int i, int j) {
-        return matrix.get(i, j);
+    public double get(int i) {
+        if (vector != null) {
+            return vector.get(i);
+        }
+
+        throw new IllegalStateException(exception);
     }
 
     @Override
-    public int columns() {
-        return matrix.columns();
-    }
+    public int length() {
+        if (vector != null) {
+            return vector.length();
+        }
 
-    @Override
-    public int rows() {
-        return matrix.rows();
+        throw new IllegalStateException(exception);
     }
 }

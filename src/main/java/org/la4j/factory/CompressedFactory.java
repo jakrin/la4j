@@ -22,6 +22,7 @@
 package org.la4j.factory;
 
 
+import java.util.Arrays;
 import java.util.Random;
 
 import org.la4j.vector.Vector;
@@ -31,9 +32,6 @@ import org.la4j.vector.sparse.CompressedVector;
 public abstract class CompressedFactory extends AbstractFactory implements Factory {
 
     private static final long serialVersionUID = 4071505L;
-
-    // TODO: use method 
-    // densety(int rows, int columns) insted of it
 
     public static final int DENSITY = 4;
 
@@ -63,9 +61,23 @@ public abstract class CompressedFactory extends AbstractFactory implements Facto
     }
 
     @Override
+    public Vector createConstantVector(int length, double value) {
+
+        double values[] = new double[length];
+        int indices[] = new int[length];
+
+        for (int i = 0; i < length; i++) {
+            indices[i] = i;
+            values[i] = value;
+        }
+
+        return new CompressedVector(length, length, values, indices);
+    }
+
+    @Override
     public Vector createRandomVector(int length) {
 
-        Random rnd = new Random();
+        Random random = new Random();
 
         int cardinality = length / DENSITY;
 
@@ -73,9 +85,11 @@ public abstract class CompressedFactory extends AbstractFactory implements Facto
         int indices[] = new int[cardinality];
 
         for (int i = 0; i < cardinality; i++) {
-            values[i] = rnd.nextDouble();
-            indices[i] = rnd.nextInt(length);
+            values[i] = random.nextDouble();
+            indices[i] = random.nextInt(length);
         }
+
+        Arrays.sort(indices);
 
         return new CompressedVector(length, cardinality, values, indices);
     }

@@ -26,8 +26,25 @@ import org.la4j.matrix.Matrices;
 import org.la4j.matrix.Matrix;
 import org.la4j.vector.Vector;
 
+/**
+ * This class represents QR decomposition of matrices. More details
+ * <p>
+ * <a href="http://mathworld.wolfram.com/QRDecomposition.html"> here.</a>
+ * </p>
+ */
 public class QRDecompositor implements MatrixDecompositor {
 
+    /**
+     * Returns the result of QR decomposition of given matrix
+     * <p>
+     * See <a href="http://mathworld.wolfram.com/QRDecomposition.html">
+     * http://mathworld.wolfram.com/QRDecomposition.html</a> for more details.
+     * </p>
+     * 
+     * @param matrix
+     * @param factory
+     * @return { Q, R }
+     */
     @Override
     public Matrix[] decompose(Matrix matrix, Factory factory) {
 
@@ -45,99 +62,79 @@ public class QRDecompositor implements MatrixDecompositor {
             double norm = 0.0;
 
             for (int i = k; i < qr.rows(); i++) {
-                norm = hypot(norm, qr.unsafe_get(i, k));
+                norm = Math.hypot(norm, qr.get(i, k));
             }
 
             if (Math.abs(norm) > Matrices.EPS) {
 
-                if (qr.unsafe_get(k, k) < 0.0) {
+                if (qr.get(k, k) < 0.0) {
                     norm = -norm;
                 }
 
                 for (int i = k; i < qr.rows(); i++) {
-                    qr.unsafe_set(i, k, qr.unsafe_get(i, k) / norm);
+                    qr.update(i, k, Matrices.asDivFunction(norm));
                 }
 
-                // TODO: create a matrix method for that operation 
-                qr.unsafe_set(k, k, qr.unsafe_get(k, k) + 1.0);
+                qr.update(k, k, Matrices.INC_FUNCTION);
 
                 for (int j = k + 1; j < qr.columns(); j++) {
 
                     double summand = 0.0;
 
                     for (int i = k; i < qr.rows(); i++) {
-                        summand += qr.unsafe_get(i, k) * qr.unsafe_get(i, j);
+                        summand += qr.get(i, k) * qr.get(i, j);
                     }
 
-                    summand = -summand / qr.unsafe_get(k, k);
+                    summand = -summand / qr.get(k, k);
 
                     for (int i = k; i < qr.rows(); i++) {
-                        qr.unsafe_set(i, j, qr.unsafe_get(i, j) + summand 
-                                      * qr.unsafe_get(i, k));
+                        qr.update(i, j, Matrices.asPlusFunction(summand * 
+                                  qr.get(i, k)));
                     }
                 }
             }
 
-            rdiag.unsafe_set(k, norm);
+            rdiag.set(k, -norm);
         }
 
         Matrix q = qr.blank(factory);
 
         for (int k = q.columns() - 1; k >= 0; k--) {
 
-            q.unsafe_set(k, k, 1.0);
+            q.set(k, k, 1.0);
 
             for (int j = k; j < q.columns(); j++) {
 
-                if (Math.abs(qr.unsafe_get(k, k)) > Matrices.EPS) {
+                if (Math.abs(qr.get(k, k)) > Matrices.EPS) {
 
                     double summand = 0.0;
 
                     for (int i = k; i < q.rows(); i++) {
-                        summand += qr.unsafe_get(i, k) * q.unsafe_get(i, j);
+                        summand += qr.get(i, k) * q.get(i, j);
                     }
 
-                    summand = -summand / qr.unsafe_get(k, k);
+                    summand = -summand / qr.get(k, k);
 
                     for (int i = k; i < q.rows(); i++) {
-                        q.unsafe_set(i, j, q.unsafe_get(i, j) 
-                                     + (summand * qr.unsafe_get(i, k)));
+                        q.update(i, j, Matrices.asPlusFunction(summand * 
+                                 qr.get(i, k)));
                     }
                 }
             }
         }
 
-        Matrix r = qr.blank(factory);
+        Matrix r = factory.createSquareMatrix(qr.columns());
 
-        for (int i = 0; i < r.columns(); i++) {
+        for (int i = 0; i < r.rows(); i++) {
             for (int j = i; j < r.columns(); j++) {
                 if (i < j) {
-                    r.unsafe_set(i, j, -qr.unsafe_get(i, j));
+                    r.set(i, j, qr.get(i, j));
                 } else if (i == j) {
-                    r.unsafe_set(i, j, rdiag.unsafe_get(i));
+                    r.set(i, j, rdiag.get(i));
                 }
             }
         }
 
-        // TODO: fix it
-
-        return new Matrix[] { q.multiply(-1), r };
-    }
-
-    private double hypot(double a, double b) {
-
-        double result;
-
-        if (Math.abs(a) > Math.abs(b)) {
-            result = b / a;
-            result = Math.abs(a) * Math.sqrt(1 + result * result);
-        } else if (b != 0) {
-            result = a / b;
-            result = Math.abs(b) * Math.sqrt(1 + result * result);
-        } else {
-            result = 0.0;
-        }
-
-        return result;
+        return new Matrix[] { q, r };
     }
 }

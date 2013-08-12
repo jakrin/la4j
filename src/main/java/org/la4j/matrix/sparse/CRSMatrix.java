@@ -15,7 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  * 
- * Contributor(s): -
+ * Contributor(s): Chandler May
+ *                 Maxim Samoylov
  * 
  */
 
@@ -29,10 +30,9 @@ import org.la4j.factory.CRSFactory;
 import org.la4j.factory.Factory;
 import org.la4j.matrix.Matrices;
 import org.la4j.matrix.Matrix;
+import org.la4j.matrix.functor.MatrixFunction;
 import org.la4j.matrix.functor.MatrixProcedure;
-import org.la4j.matrix.source.Array2DMatrixSource;
 import org.la4j.matrix.source.MatrixSource;
-import org.la4j.matrix.source.UnsafeMatrixSource;
 import org.la4j.vector.Vector;
 import org.la4j.vector.sparse.CompressedVector;
 
@@ -55,11 +55,11 @@ public class CRSMatrix extends AbstractCompressedMatrix implements SparseMatrix 
     }
 
     public CRSMatrix(Matrix matrix) {
-        this(new UnsafeMatrixSource(matrix));
+        this(Matrices.asUnsafeSource(matrix));
     }
 
     public CRSMatrix(double array[][]) {
-        this(new Array2DMatrixSource(array));
+        this(Matrices.asArray2DSource(array));
     }
 
     public CRSMatrix(MatrixSource source) {
@@ -86,7 +86,7 @@ public class CRSMatrix extends AbstractCompressedMatrix implements SparseMatrix 
     }
 
     public CRSMatrix(int rows, int columns, int cardinality) {
-        super(new CRSFactory(), rows, columns);
+        super(Matrices.CRS_FACTORY, rows, columns);
 
         int alignedSize = align(rows, columns, cardinality);
 
@@ -109,97 +109,31 @@ public class CRSMatrix extends AbstractCompressedMatrix implements SparseMatrix 
     }
 
     @Override
-    public double unsafe_get(int i, int j) {
+    public double get(int i, int j) {
 
-        for (int ii = rowPointers[i]; ii < rowPointers[i + 1]; ii++) {
-            if (columnIndices[ii] == j) {
-                return values[ii];
-            }
+        int k = searchForColumnIndex(j, rowPointers[i], rowPointers[i + 1]);
+
+        if (k < rowPointers[i + 1] && columnIndices[k] == j) {
+            return values[k];
         }
 
         return 0.0;
     }
 
     @Override
-    public void unsafe_set(int i, int j, double value) {
+    public void set(int i, int j, double value) {
 
-        for (int ii = rowPointers[i]; ii < rowPointers[i + 1]; ii++) {
-            if (columnIndices[ii] == j) {
+        int k = searchForColumnIndex(j, rowPointers[i], rowPointers[i + 1]);
 
-                // TODO: if value is zero:
-                // clear the value cell
-
-                values[ii] = value;
-                return;
+        if (k < rowPointers[i + 1] && columnIndices[k] == j) {
+            if (Math.abs(value) < Matrices.EPS) {
+                remove(k, i);
+            } else {
+                values[k] = value;
             }
+        } else {
+            insert(k, i, j, value);
         }
-
-        if (Math.abs(value) < Matrices.EPS) {
-            return;
-        }
-
-        if (values.length < cardinality + 1) {
-            growup();
-        }
-
-        int position = rowPointers[i];
-        while (position < rowPointers[i + 1] && j >= columnIndices[position]) {
-            position++;
-        }
-
-        for (int k = cardinality; k > position; k--) {
-            values[k] = values[k - 1];
-            columnIndices[k] = columnIndices[k - 1];
-        }
-
-        values[position] = value;
-        columnIndices[position] = j;
-
-        for (int k = i + 1; k < rows + 1; k++) {
-            rowPointers[k]++;
-        }
-
-        cardinality++;
-    }
-
-    @Override
-    public void resize(int rows, int columns) {
-
-        if (rows < 0 || columns < 0) {
-            throw new IllegalArgumentException("Wrong dimensions: " 
-                    + rows + "x" + columns);
-        }
-
-        if (this.rows == rows && this.columns == columns) {
-            return;
-        }
-
-        if (this.rows >= rows && this.columns >= columns) {
-
-            int position = 0;
-            for (int k = 0; k < rowPointers[rows]; k++) {
-                if (columns > columnIndices[k]) {
-                    values[position++] = values[k];
-                }
-            }
-
-            cardinality = rowPointers[rows];
-
-        } else if (this.rows < rows) {
-
-            int newRowPointers[] = new int[rows + 1];
-            System.arraycopy(rowPointers, 0, newRowPointers, 0,
-                    rowPointers.length);
-
-            for (int i = this.rows; i < rows + 1; i++) {
-                newRowPointers[i] = cardinality;
-            }
-
-            this.rowPointers = newRowPointers;
-        }
-
-        this.rows = rows;
-        this.columns = columns;
     }
 
     @Override
@@ -211,7 +145,7 @@ public class CRSMatrix extends AbstractCompressedMatrix implements SparseMatrix 
         int k = 0, i = 0;
         while (k < cardinality) {
             for (int j = rowPointers[i]; j < rowPointers[i + 1]; j++, k++) {
-                result.unsafe_set(columnIndices[j], i, values[j]);
+                result.set(columnIndices[j], i, values[j]);
             }
             i++;
         }
@@ -221,7 +155,6 @@ public class CRSMatrix extends AbstractCompressedMatrix implements SparseMatrix 
 
     @Override
     public Vector getRow(int i) {
-        ensureIndexInRows(i);
 
         int rowCardinality = rowPointers[i + 1] - rowPointers[i]; 
 
@@ -239,172 +172,244 @@ public class CRSMatrix extends AbstractCompressedMatrix implements SparseMatrix 
     @Override
     public Vector getRow(int i, Factory factory) {
         ensureFactoryIsNotNull(factory);
-        ensureIndexInRows(i);
 
         Vector result = factory.createVector(columns);
 
         for (int ii = rowPointers[i]; ii < rowPointers[i + 1]; ii++) {
-            result.unsafe_set(columnIndices[ii], values[ii]);
+            result.set(columnIndices[ii], values[ii]);
         }
 
         return result;
     }
 
     @Override
-    public Vector getColumn(int i, Factory factory) {
+    public Vector getColumn(int j, Factory factory) {
         ensureFactoryIsNotNull(factory);
-        ensureIndexInColumns(i);
 
         Vector result = factory.createVector(rows);
 
-        int k = 0, ii = 0;
-        while (k < cardinality) {
-            for (int jj = rowPointers[ii]; jj < rowPointers[ii + 1]; 
-                 jj++, k++) {
+        int i = 0;
+        while (rowPointers[i] < cardinality) {
 
-                if (columnIndices[jj] == i) {
-                    result.unsafe_set(ii, values[jj]);
-                }
+            int k = searchForColumnIndex(j, rowPointers[i], rowPointers[i + 1]);
+
+            if (k < rowPointers[i + 1] && columnIndices[k] == j) {
+                result.set(i, values[k]);
             }
-            ii++;
+
+            i++;
         }
 
         return result;
     }
 
+//    //TODO: Rewrite it
+//    @Override
+//    public void setRow(int i, Vector row) {
+//
+//        if (row == null) {
+//            throw new IllegalArgumentException("Row can't be null.");
+//        }
+//
+//        if (columns != row.length()) {
+//            throw new IllegalArgumentException("Wrong row length: " 
+//                                               + row.length());
+//        }
+//
+//        int position = rowPointers[i], limit = rowPointers[i + 1];
+//
+//        rowPointers[i] = limit;
+//
+//        for (int ii = 0; ii < row.length(); ii++) {
+//
+//            double value = row.get(ii);
+//
+//            if (Math.abs(value) > Matrices.EPS) {
+//
+//                if (position >= limit) {
+//
+//                    if (values.length < cardinality + 1) {
+//                        growup();
+//                    }
+//
+//                    for (int k = cardinality; k > position; k--) {
+//                        values[k] = values[k - 1];
+//                        columnIndices[k] = columnIndices[k - 1];
+//                    }
+//
+//                    cardinality++;
+//
+//                } else {
+//                    rowPointers[i]--;
+//                }
+//
+//                values[position] = value;
+//                columnIndices[position] = ii;
+//                position++;
+//            }
+//        }
+//
+//        if (limit > position) {
+//
+//            cardinality -= (limit - position);
+//
+//            for (int k = position; k < cardinality; k++) {
+//                values[k] = values[k + (limit - position)];
+//                columnIndices[k] = columnIndices[k + (limit - position)];
+//            }
+//
+//            rowPointers[i] -= (limit - position);
+//        }
+//
+//        for (int k = i + 1; k < rows + 1; k++) {
+//            rowPointers[k] += (position - limit);
+//        }
+//    }
+
     @Override
-    public void setColumn(int i, Vector column) {
-        ensureIndexInColumns(i);
+    public Matrix copy() {
+        double $values[] = new double[align(rows, columns, cardinality)];
+        int $columnIndices[] = new int[align(rows, columns, cardinality)];
+        int $rowPointers[] = new int[rows + 1];
 
-        if (column == null) {
-            throw new IllegalArgumentException("Column can't be null.");
-        }
+        System.arraycopy(values, 0, $values, 0, cardinality);
+        System.arraycopy(columnIndices, 0, $columnIndices, 0, cardinality);
+        System.arraycopy(rowPointers, 0, $rowPointers, 0, rows + 1);
 
-        if (rows != column.length()) {
-            throw new IllegalArgumentException("Wrong column length: " 
-                                               + column.length());
-        }
-
-        for (int ii = 0; ii < column.length(); ii++) {
-
-            int position = rowPointers[ii], limit = rowPointers[ii + 1];
-            while (position < limit && columnIndices[position] < i) {
-                position++;
-            }
-
-            double value = column.unsafe_get(ii); 
-
-            if (Math.abs(value) > Matrices.EPS) {
-
-                if (values.length < cardinality + 1) {
-                    growup();
-                }
-
-                if (columnIndices[position] != i || position == limit) {
-
-                    for (int k = cardinality; k > position; k--) {
-                        values[k] = values[k - 1];
-                        columnIndices[k] = columnIndices[k - 1];
-                    }
-
-                    for (int k = ii + 1; k < rows + 1; k++) {
-                        rowPointers[k]++;
-                    }
-
-                    columnIndices[position] = i;
-
-                    cardinality++;
-                }
-
-                values[position] = value;
-
-            } else if (columnIndices[position] == i && position < limit) {
-
-                for (int k = position; k < cardinality - 1; k++) {
-                    values[k] = values[k + 1];
-                    columnIndices[k] = columnIndices[k + 1];
-                }
-
-                for (int k = ii + 1; k < rows + 1; k++) {
-                    rowPointers[k]--;
-                }
-
-                cardinality--;
-            }
-        }
+        return new CRSMatrix(rows, columns, cardinality, $values, 
+                             $columnIndices, $rowPointers);
     }
 
     @Override
-    public void setRow(int i, Vector row) {
-        ensureIndexInRows(i);
+    public Matrix resize(int rows, int columns) {
+        ensureDimensionsAreNotNegative(rows, columns);
 
-        if (row == null) {
-            throw new IllegalArgumentException("Row can't be null.");
+        if (this.rows == rows && this.columns == columns) {
+            return copy();
         }
 
-        if (columns != row.length()) {
-            throw new IllegalArgumentException("Wrong row length: " 
-                                               + row.length());
-        }
+        if (this.rows >= rows && this.columns >= columns) {
 
-        int position = rowPointers[i], limit = rowPointers[i + 1];
+            // TODO: think about cardinality in align call 
+            double $values[] = new double[align(rows, columns, cardinality)];
+            int $columnIndices[] = new int[align(rows, columns, cardinality)];
+            int $rowPointers[] = new int[rows + 1];
 
-        rowPointers[i] = limit;
+            int $cardinality = 0;
 
-        for (int ii = 0; ii < row.length(); ii++) {
+            int k = 0, i = 0;
+            while (k < cardinality && i < rows) {
 
-            double value = row.unsafe_get(ii);
+                $rowPointers[i] = $cardinality;
 
-            if (Math.abs(value) > Matrices.EPS) {
+                for (int j = rowPointers[i]; j < rowPointers[i + 1] 
+                        && columnIndices[j] < columns; j++, k++) {
 
-                if (position >= limit) {
-
-                    if (values.length < cardinality + 1) {
-                        growup();
-                    }
-
-                    for (int k = cardinality; k > position; k--) {
-                        values[k] = values[k - 1];
-                        columnIndices[k] = columnIndices[k - 1];
-                    }
-
-                    cardinality++;
-
-                } else {
-                    rowPointers[i]--;
+                    $values[$cardinality] = values[j];
+                    $columnIndices[$cardinality] = columnIndices[j];
+                    $cardinality++;
                 }
-
-                values[position] = value;
-                columnIndices[position] = ii;
-                position++;
-            }
-        }
-
-        if (limit > position) {
-
-            cardinality -= (limit - position);
-
-            for (int k = position; k < cardinality; k++) {
-                values[k] = values[k + (limit - position)];
-                columnIndices[k] = columnIndices[k + (limit - position)];
+                i++;
             }
 
-            rowPointers[i] -= (limit - position);
+            $rowPointers[rows] = $cardinality;
+
+            return new CRSMatrix(rows, columns, $cardinality, $values,
+                                 $columnIndices, $rowPointers);
         }
 
-        for (int k = i + 1; k < rows + 1; k++) {
-            rowPointers[k] += (position - limit);
+        if (this.rows < rows) {
+            double $values[] = new double[align(rows, columns, cardinality)];
+            int $columnIndices[] = new int[align(rows, columns, cardinality)];
+            int $rowPointers[] = new int[rows + 1];
+
+            System.arraycopy(values, 0, $values, 0, cardinality);
+            System.arraycopy(columnIndices, 0, $columnIndices, 0, cardinality);
+            System.arraycopy(rowPointers, 0, $rowPointers, 0, this.rows + 1);
+
+
+            for (int i = this.rows; i < rows + 1; i++) {
+                $rowPointers[i] = cardinality;
+            }
+
+            return new CRSMatrix(rows, columns, cardinality, $values, 
+                                 $columnIndices, $rowPointers);
         }
+
+        // TODO: think about cardinality in align call
+        double $values[] = new double[align(rows, columns, cardinality)];
+        int $columnIndices[] = new int[align(rows, columns, cardinality)];
+        int $rowPointers[] = new int[rows + 1];
+
+        System.arraycopy(values, 0, $values, 0, cardinality);
+        System.arraycopy(columnIndices, 0, $columnIndices, 0, cardinality);
+        System.arraycopy(rowPointers, 0, $rowPointers, 0, this.rows + 1);
+
+        return new CRSMatrix(rows, columns, cardinality, $values, 
+                $columnIndices, $rowPointers);
     }
 
     @Override
-    public void each(MatrixProcedure procedure) {
+    public void eachNonZero(MatrixProcedure procedure) {
         int k = 0, i = 0;
         while (k < cardinality) {
             for (int j = rowPointers[i]; j < rowPointers[i + 1]; j++, k++) {
                 procedure.apply(i, columnIndices[j], values[j]);
             }
             i++;
+        }
+    }
+
+    @Override
+    public void each(MatrixProcedure procedure) {
+        int k = 0;
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < columns; j++) {
+                if (j == columnIndices[k]) {
+                    procedure.apply(i, j, values[k++]);
+                } else {
+                    procedure.apply(i, j, 0.0);
+                }
+            }
+        }
+
+    }
+
+    @Override
+    public void eachInRow(int i, MatrixProcedure procedure) {
+        int k = rowPointers[i];
+        for (int j = 0; j < columns; j++) {
+            if (j == columnIndices[k]) {
+                procedure.apply(i, j, values[k++]);
+            } else {
+                procedure.apply(i, j, 0.0);
+            }
+        }
+    }
+
+    @Override
+    public void eachNonZeroInRow(int i, MatrixProcedure procedure) {
+        for (int j = rowPointers[i]; j < rowPointers[i + 1]; j++) {
+            procedure.apply(i, columnIndices[j], values[j]);
+        }
+    }
+
+    @Override
+    public void update(int i, int j, MatrixFunction function) {
+
+        int k = searchForColumnIndex(j, rowPointers[i], rowPointers[i + 1]);
+
+        if (k < rowPointers[i + 1] && columnIndices[k] == j) {
+
+            double value = function.evaluate(i, j, values[k]);
+
+            if (Math.abs(value) < Matrices.EPS) {
+                remove(k, i);
+            } else {
+                values[k] = value;
+            }
+        } else {
+            insert(k, i, j, function.evaluate(i, j, 0));
         }
     }
 
@@ -448,22 +453,100 @@ public class CRSMatrix extends AbstractCompressedMatrix implements SparseMatrix 
         }
     }
 
+    private int searchForColumnIndex(int j, int left, int right) {
+
+        if (left == right) {
+            return left;
+        }
+
+        if (right - left < 8) {
+
+            int jj = left;
+            while (jj < right && columnIndices[jj] < j) {
+                jj++;
+            }
+
+            return jj;
+        }
+
+        int p = (left + right) / 2;
+
+        if (columnIndices[p] > j) {
+            return searchForColumnIndex(j, left, p);
+        } else if (columnIndices[p] < j) {
+            return searchForColumnIndex(j, p + 1, right);
+        } else {
+            return p;
+        }
+    }
+
+    private void insert(int k, int i, int j, double value) {
+
+        if (Math.abs(value) < Matrices.EPS) {
+            return;
+        }
+
+        if (values.length < cardinality + 1) {
+            growup();
+        }
+
+        System.arraycopy(values, k, values, k + 1, cardinality - k);
+        System.arraycopy(columnIndices, k, columnIndices, k + 1, 
+                         cardinality - k);
+
+//      for (int k = cardinality; k > position; k--) {
+//          values[k] = values[k - 1];
+//          columnIndices[k] = columnIndices[k - 1];
+//      }
+
+        values[k] = value;
+        columnIndices[k] = j;
+
+        for (int ii = i + 1; ii < rows + 1; ii++) {
+            rowPointers[ii]++;
+        }
+
+        cardinality++;
+    }
+
+    private void remove(int k, int i) {
+
+        cardinality--;
+
+        System.arraycopy(values, k + 1, values, k, cardinality - k);
+        System.arraycopy(columnIndices, k + 1, columnIndices, k, 
+                         cardinality - k);
+
+//        for (int kk = k; kk < cardinality; kk++) {
+//            values[kk] = values[kk + 1];
+//            columnIndices[kk] = columnIndices[kk + 1];
+//        }
+
+        for (int ii = i + 1; ii < rows + 1; ii++) {
+            rowPointers[ii]--;
+        }
+    }
+
     private void growup() {
 
-        int newSize = Math.min(rows * columns, (cardinality * 3) / 2 + 1);
+        if (values.length == rows * columns) {
+            throw new IllegalStateException("This matrix can't grow up.");
+        }
 
-        double newValues[] = new double[newSize];
-        int newColumnIndices[] = new int[newSize];
+        int capacity = Math.min(rows * columns, (cardinality * 3) / 2 + 1);
 
-        System.arraycopy(values, 0, newValues, 0, cardinality);
-        System.arraycopy(columnIndices, 0, newColumnIndices, 0, cardinality);
+        double $values[] = new double[capacity];
+        int $columnIndices[] = new int[capacity];
 
-        this.values = newValues;
-        this.columnIndices = newColumnIndices;
+        System.arraycopy(values, 0, $values, 0, cardinality);
+        System.arraycopy(columnIndices, 0, $columnIndices, 0, cardinality);
+
+        values = $values;
+        columnIndices = $columnIndices;
     }
 
     private int align(int rows, int columns, int cardinality) {
-        return Math.min(rows * columns, ((cardinality % MINIMUM_SIZE) + 1)
+        return Math.min(rows * columns, ((cardinality / MINIMUM_SIZE) + 1)
                 * MINIMUM_SIZE);
     }
 }

@@ -21,28 +21,48 @@
 
 package org.la4j.matrix.source;
 
+import java.io.IOException;
+
+import org.la4j.io.MatrixStream;
 import org.la4j.matrix.Matrix;
 
-public class UnsafeMatrixSource implements MatrixSource {
+public class StreamMatrixSource implements MatrixSource {
 
     private Matrix matrix;
+    private IOException exception;
 
-    public UnsafeMatrixSource(Matrix matrix) {
-        this.matrix = matrix;
+    public StreamMatrixSource(MatrixStream stream) {
+        try {
+            this.matrix = stream.readMatrix();
+        } catch (IOException exception) {
+            this.exception = exception;
+        }
     }
 
     @Override
     public double get(int i, int j) {
-        return matrix.get(i, j);
+        if (matrix != null) {
+            return matrix.get(i, j);
+        }
+
+        throw new IllegalStateException(exception); 
     }
 
     @Override
     public int columns() {
-        return matrix.columns();
+        if (matrix != null) {
+            return matrix.columns();
+        }
+
+        throw new IllegalStateException(exception);
     }
 
     @Override
     public int rows() {
-        return matrix.rows();
+        if (matrix != null) {
+            return matrix.rows();
+        }
+
+        throw new IllegalStateException(exception);
     }
 }

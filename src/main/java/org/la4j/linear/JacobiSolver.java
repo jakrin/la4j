@@ -26,12 +26,29 @@ import org.la4j.matrix.Matrices;
 import org.la4j.matrix.Matrix;
 import org.la4j.vector.Vector;
 
+/**
+ * This class represents Jacobi method for solving linear systems. More details
+ * <p>
+ * <a href="http://mathworld.wolfram.com/JacobiMethod.html"> here.</a>
+ * </p>
+ */
 public class JacobiSolver implements LinearSystemSolver {
 
     private static final long serialVersionUID = 4071505L;
 
     private final static int MAX_ITERATIONS = 1000000;
 
+    /**
+     * Returns the solution for the given linear system
+     * <p>
+     * See <a href="http://mathworld.wolfram.com/JacobiMethod.html">
+     * http://mathworld.wolfram.com/JacobiMethod.html</a> for more details.
+     * </p>
+     * 
+     * @param linearSystem
+     * @param factory
+     * @return vector
+     */
     @Override
     public Vector solve(LinearSystem linearSystem, Factory factory) {
 
@@ -44,8 +61,9 @@ public class JacobiSolver implements LinearSystemSolver {
 
         for (int i = 0; i < a.rows(); i++) {
             for (int j = 0; j < a.columns(); j++) {
-                if (i != j)
-                    a.unsafe_set(i, j, a.unsafe_get(i, j) / a.unsafe_get(i, i));
+                if (i != j) {
+                    a.update(i, j, Matrices.asDivFunction(a.get(i, i)));
+                }
             }
         }
 
@@ -59,14 +77,14 @@ public class JacobiSolver implements LinearSystemSolver {
 
             for (int i = 0; i < a.rows(); i++) {
 
-                double sum = b.unsafe_get(i) / a.unsafe_get(i, i);
+                double sum = b.get(i) / a.get(i, i);
                 for (int j = 0; j < a.columns(); j++) {
                     if (i != j) {
-                        sum -= a.unsafe_get(i, i) * current.unsafe_get(j);
+                        sum -= a.get(i, i) * current.get(j);
                     }
                 }
 
-                next.unsafe_set(i, sum);
+                next.set(i, sum);
             }
 
             current = next;
@@ -80,6 +98,11 @@ public class JacobiSolver implements LinearSystemSolver {
         return current;
     }
 
+    /**
+     * Checks whether this linear system can be solved by Jacobi solver
+     * @param linearSystem
+     * @return <code>true</code> if given linear system can be solved by Jacobi solver
+     */
     @Override
     public boolean suitableFor(LinearSystem linearSystem) {
         Matrix a = linearSystem.coefficientsMatrix();
@@ -89,11 +112,11 @@ public class JacobiSolver implements LinearSystemSolver {
 
             for (int j = 0; j < a.columns(); j++) {
                 if (i != j) {
-                    sum += Math.abs(a.unsafe_get(i, j));
+                    sum += Math.abs(a.get(i, j));
                 }
             }
 
-            if (sum > Math.abs(a.unsafe_get(i, i)) - Matrices.EPS) {
+            if (sum > Math.abs(a.get(i, i)) - Matrices.EPS) {
                 return false;
             }
         }

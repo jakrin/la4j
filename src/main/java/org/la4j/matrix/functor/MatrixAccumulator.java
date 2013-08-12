@@ -19,30 +19,20 @@
  * 
  */
 
-package org.la4j.matrix.source;
+package org.la4j.matrix.functor;
 
-import org.la4j.matrix.Matrix;
+public interface MatrixAccumulator {
 
-public class UnsafeMatrixSource implements MatrixSource {
+    /**
+     * 
+     * @param value
+     * @return
+     */
+    void update(int i, int j, double value);
 
-    private Matrix matrix;
-
-    public UnsafeMatrixSource(Matrix matrix) {
-        this.matrix = matrix;
-    }
-
-    @Override
-    public double get(int i, int j) {
-        return matrix.get(i, j);
-    }
-
-    @Override
-    public int columns() {
-        return matrix.columns();
-    }
-
-    @Override
-    public int rows() {
-        return matrix.rows();
-    }
+    /**
+     * 
+     * @return
+     */
+    double accumulate();
 }
