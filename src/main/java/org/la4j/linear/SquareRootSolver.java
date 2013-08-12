@@ -26,10 +26,26 @@ import org.la4j.matrix.Matrices;
 import org.la4j.matrix.Matrix;
 import org.la4j.vector.Vector;
 
+/**
+ * This class represents <a
+ * href="http://mathworld.wolfram.com/SquareRootMethod.html"> Square Root method
+ * </a> for solving linear systems.
+ */
 public class SquareRootSolver implements LinearSystemSolver {
 
     private static final long serialVersionUID = 4071505L;
 
+    /**
+     * Returns the solution for the given linear system
+     * <p>
+     * See <a href="http://mathworld.wolfram.com/SquareRootMethod.html">
+     * http://mathworld.wolfram.com/SquareRootMethod.html</a> for more details.
+     * </p>
+     * 
+     * @param linearSystem
+     * @param factory
+     * @return vector
+     */
     @Override
     public Vector solve(LinearSystem linearSystem, Factory factory) {
 
@@ -51,20 +67,20 @@ public class SquareRootSolver implements LinearSystemSolver {
 
             double dSumand = 0;
             for (int l = 0; l < i; l++) {
-                dSumand += Math.pow(s.unsafe_get(l, i), 2) * d.unsafe_get(l, l);
+                dSumand += Math.pow(s.get(l, i), 2) * d.get(l, l);
             }
 
-            d.unsafe_set(i, i, Math.signum(a.unsafe_get(i, i) - dSumand));
+            d.set(i, i, Math.signum(a.get(i, i) - dSumand));
 
             double sSummand = 0;
             for (int l = 0; l < i; l++) {
-                sSummand += s.unsafe_get(l, i) * s.unsafe_get(l, i) 
-                            * d.unsafe_get(l, l);
+                sSummand += s.get(l, i) * s.get(l, i) 
+                            * d.get(l, l);
             }
 
-            s.unsafe_set(i, i, Math.sqrt(Math.abs(a.unsafe_get(i, i) - sSummand)));
+            s.set(i, i, Math.sqrt(Math.abs(a.get(i, i) - sSummand)));
 
-            if (Math.abs(s.unsafe_get(i, i)) < Matrices.EPS) {
+            if (Math.abs(s.get(i, i)) < Matrices.EPS) {
                 throw new IllegalArgumentException(
                         "matrix s contains '0' at main diagonal");
             }
@@ -73,38 +89,43 @@ public class SquareRootSolver implements LinearSystemSolver {
 
                 double summand = 0;
                 for (int l = 0; l < i; l++) {
-                    summand += s.unsafe_get(l, i) * s.unsafe_get(l, i) 
-                               * d.unsafe_get(l, l);
+                    summand += s.get(l, i) * s.get(l, i) 
+                               * d.get(l, l);
                 }
 
-                s.unsafe_set(i, j,
-                        (a.unsafe_get(i, j) - summand) / (s.unsafe_get(i, i) 
-                         * d.unsafe_get(i, i)));
+                s.set(i, j, (a.get(i, j) - summand) / (s.get(i, i) * d.get(i, i)));
             }
 
             double zSummand = 0;
             for (int l = 0; l < i; l++) {
-                zSummand += z.unsafe_get(l) * s.unsafe_get(l, i);
+                zSummand += z.get(l) * s.get(l, i);
             }
 
-            z.unsafe_set(i, (b.unsafe_get(i) - zSummand) / s.unsafe_get(i, i));
+            z.set(i, (b.get(i) - zSummand) / s.get(i, i));
 
-            y.unsafe_set(i, z.unsafe_get(i) / d.unsafe_get(i, i));
+            y.set(i, z.get(i) / d.get(i, i));
         }
 
         for (int i = a.rows() - 1; i >= 0; i--) {
 
             double summand = 0;
             for (int l = i + 1; l < a.columns(); l++) {
-                summand += x.unsafe_get(l) * s.unsafe_get(i, l);
+                summand += x.get(l) * s.get(i, l);
             }
 
-            x.unsafe_set(i, (y.unsafe_get(i) - summand) / s.unsafe_get(i, i));
+            x.set(i, (y.get(i) - summand) / s.get(i, i));
         }
 
         return x;
     }
 
+    /**
+     * Checks whether this linear system can be solved by Square Root solver
+     * 
+     * @param linearSystem
+     * @return <code>true</code> if given linear system can be solved by Square
+     *         Root solver
+     */
     @Override
     public boolean suitableFor(LinearSystem linearSystem) {
         return linearSystem.coefficientsMatrix().is(Matrices.SYMMETRIC_MATRIX);

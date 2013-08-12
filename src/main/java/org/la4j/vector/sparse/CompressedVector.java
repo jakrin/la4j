@@ -15,7 +15,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  * 
- * Contributor(s): -
+ * Contributor(s): Ewald Grusk
+ *                 Yuriy Drozd
+ *                 Maxim Samoylov
  * 
  */
 
@@ -25,13 +27,11 @@ import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 
-import org.la4j.factory.CRSFactory;
 import org.la4j.vector.AbstractVector;
 import org.la4j.vector.Vector;
 import org.la4j.vector.Vectors;
+import org.la4j.vector.functor.VectorFunction;
 import org.la4j.vector.functor.VectorProcedure;
-import org.la4j.vector.source.ArrayVectorSource;
-import org.la4j.vector.source.UnsafeVectorSource;
 import org.la4j.vector.source.VectorSource;
 
 public class CompressedVector extends AbstractVector implements SparseVector {
@@ -54,11 +54,11 @@ public class CompressedVector extends AbstractVector implements SparseVector {
     }
 
     public CompressedVector(Vector vector) {
-        this(new UnsafeVectorSource(vector));
+        this(Vectors.asUnsafeSource(vector));
     }
 
     public CompressedVector(double array[]) {
-        this(new ArrayVectorSource(array));
+        this(Vectors.asArraySource(array));
     }
 
     public CompressedVector(VectorSource source) {
@@ -68,7 +68,7 @@ public class CompressedVector extends AbstractVector implements SparseVector {
             double value = source.get(i);
             if (Math.abs(value) > Vectors.EPS) {
 
-                if (values.length <= cardinality) {
+                if (values.length < cardinality + 1) {
                     growup();
                 }
 
@@ -80,14 +80,14 @@ public class CompressedVector extends AbstractVector implements SparseVector {
     }
 
     public CompressedVector(int length, int cardinality) {
-        this(length, cardinality, new double[align(length, cardinality)],
+        this(length, cardinality, new double[align(length, cardinality)], 
              new int[align(length, cardinality)]);
     }
 
-    public CompressedVector(int length, int cardinality, double values[],
-                            int indices[]) {
+    public CompressedVector(int length, int cardinality, double values[], 
+            int indices[]) {
 
-        super(new CRSFactory(), length);
+        super(Vectors.COMPRESSED_FACTORY, length);
 
         this.cardinality = cardinality;
 
@@ -96,46 +96,94 @@ public class CompressedVector extends AbstractVector implements SparseVector {
     }
 
     @Override
-    public double unsafe_get(int i) {
+    public double get(int i) {
 
-        for (int k = 0; k < cardinality; k++) {
-            if (indices[k] == i) {
-                return values[k];
-            }
+        int k = searchForIndex(i, 0, cardinality);
+
+        if (k < cardinality && indices[k] == i) {
+            return values[k];
         }
 
         return 0.0;
     }
 
     @Override
-    public void unsafe_set(int i, double value) {
+    public void set(int i, double value) {
 
-        for (int k = 0; k < cardinality; k++) {
-            if (indices[k] == i) {
-                if (Math.abs(value) > Vectors.EPS) {
-                    values[k] = value;
-                    return;
-                } else {
-                    cardinality--;
-                    for (int kk = k; kk < cardinality; kk++) {
-                        values[kk] = values[kk + 1];
-                        indices[kk] = indices[kk + 1];
-                    }
-                }
+        int k = searchForIndex(i, 0, cardinality);
+
+        if (k < cardinality && indices[k] == i) {
+            if (Math.abs(value) > Vectors.EPS) {
+                values[k] = value;
+            } else {
+                remove(k);
             }
+        } else {
+            insert(k, i, value);
         }
+    }
 
-        if (Math.abs(value) < Vectors.EPS) {
+    @Override
+    public void swap(int i, int j) {
+
+        if (i == j) {
             return;
         }
 
-        if (values.length <= cardinality + 1) {
-            growup();
-        }
+        int ii = searchForIndex(i, 0, cardinality);
+        int jj = searchForIndex(j, 0, cardinality);
 
-        values[cardinality] = value;
-        indices[cardinality] = i;
-        cardinality++;
+        boolean iiNotZero = ii < cardinality && i == indices[ii];
+        boolean jjNotZero = jj < cardinality && j == indices[jj];
+
+        if (iiNotZero && jjNotZero) {
+
+            double sd = values[ii];
+            values[ii] = values[jj];
+            values[jj] = sd;
+
+        } else {
+
+            double notZero = values[iiNotZero ? ii : jj];
+
+            int leftIndex = (ii < jj) ? ii : jj;
+            int rightIndex = (ii > jj) ? ii : jj;
+
+            if (((iiNotZero && (leftIndex == ii)) 
+                 || (jjNotZero && (leftIndex == jj))) && (ii != jj)) {
+
+                System.arraycopy(values, leftIndex + 1, values, leftIndex, 
+                        cardinality - leftIndex);
+                System.arraycopy(values, rightIndex - 1, values, rightIndex, 
+                        cardinality - rightIndex);
+
+                values[rightIndex - 1] = notZero;
+
+                System.arraycopy(indices, leftIndex + 1, indices, leftIndex, 
+                        cardinality - leftIndex);
+                System.arraycopy(indices, rightIndex - 1, indices, rightIndex, 
+                        cardinality - rightIndex);
+
+                indices[rightIndex -1] = jjNotZero ? i : j;
+
+            } else if((iiNotZero && (rightIndex == ii)) 
+                      || (jjNotZero && (rightIndex == jj))) {
+
+                System.arraycopy(values, rightIndex + 1, values, rightIndex, 
+                        cardinality - rightIndex);
+                System.arraycopy(values, leftIndex, values, leftIndex + 1, 
+                        cardinality - leftIndex);
+
+                values[leftIndex] = notZero;
+
+                System.arraycopy(indices, rightIndex + 1, indices, rightIndex, 
+                        cardinality - rightIndex);
+                System.arraycopy(indices, leftIndex, indices, leftIndex + 1, 
+                        cardinality - leftIndex);
+
+                indices[leftIndex] = jjNotZero ? i : j;
+            }
+        }
     }
 
     @Override
@@ -145,70 +193,39 @@ public class CompressedVector extends AbstractVector implements SparseVector {
 
     @Override
     public double density() {
-        return cardinality / length;
+        return cardinality / (double) length;
     }
 
     @Override
-    public void resize(int length) {
-
-        if (length < 0) {
-            throw new IllegalArgumentException("Wrong dimension: " + length);
-        }
-
-        if (length == this.length) {
-            return;
-        }
-
-        if (length < this.length) {
-            for (int i = 0; i < cardinality; i++) {
-                if (indices[i] > length) {
-                    cardinality--;
-                }
-            }
-        }
-
-        this.length = length;
+    public Vector copy() {
+        return resize(length);
     }
 
     @Override
-    public void swap(int i, int j) {
-        ensureIndexInLength(i);
-        ensureIndexInLength(j);
+    public Vector resize(int length) {
+        ensureLengthIsNotNegative(length);
 
-        if (i == j) {
-            return;
-        }
+        int $cardinality = 0;
+        double $values[] = new double[align(length, 0)];
+        int $indices[] = new int[align(length, 0)];
 
-        int ii = -1, jj = -1;
+        if (length >= this.length) {
 
-        for (int k = 0; (ii == -1 || jj == -1) && k < cardinality; k++) {
+            $cardinality = cardinality; 
+            System.arraycopy(values, 0, $values, 0, cardinality);
+            System.arraycopy(indices, 0, $indices, 0, cardinality);
 
-            if (ii == -1 && indices[k] == i) {
-                ii = k;
+        } else {
+
+            $cardinality = searchForIndex(length, 0, cardinality);
+            for (int i = 0; i < $cardinality; i++) {
+                $values[i] = values[i];
+                $indices[i] = indices[i];
             }
 
-            if (jj == -1 && indices[k] == j) {
-                jj = k;
-            }
         }
 
-        if (ii == -1 && jj == -1) {
-            return;
-        }
-
-        if (ii == -1) {
-            indices[jj] = i;
-            return;
-        }
-
-        if (jj == -1) {
-            indices[ii] = j;
-            return;
-        }
-
-        int s = indices[jj];
-        indices[jj] = indices[ii];
-        indices[ii] = s;
+        return new CompressedVector(length, $cardinality, $values, $indices);
     }
 
     @Override
@@ -216,6 +233,37 @@ public class CompressedVector extends AbstractVector implements SparseVector {
         for (int i = 0; i < cardinality; i++) {
             procedure.apply(indices[i], values[i]);
         }
+    }
+
+    @Override
+    public void eachNonZero(VectorProcedure procedure) {
+        for (int i = 0; i < cardinality; i++) {
+            procedure.apply(indices[i], values[i]);
+        }
+    }
+
+    @Override
+    public void update(int i, VectorFunction function) {
+
+        int k = searchForIndex(i, 0, cardinality);
+
+        if (k < cardinality && indices[k] == i) {
+
+            double value = function.evaluate(i, values[k]); 
+
+            if (Math.abs(value) > Vectors.EPS) {
+                values[k] = value;
+            } else {
+                remove(k);
+            }
+        } else {
+            insert(k, i, function.evaluate(i, 0.0));
+        }
+    }
+
+    @Override
+    public Vector safe() {
+        return new SparseSafeVector(this);
     }
 
     @Override
@@ -248,22 +296,90 @@ public class CompressedVector extends AbstractVector implements SparseVector {
         }
     }
 
+    private int searchForIndex(int i, int left, int right) {
+
+        if (left == right) {
+            return left;
+        }
+
+        if (right - left < 8) {
+
+            int ii = left;
+            while (ii < right && indices[ii] < i) {
+                ii++;
+            }
+
+            return ii;
+        }
+
+        int p = (left + right) / 2;
+
+        if (indices[p] > i) {
+            return searchForIndex(i, left, p);
+        } else if (indices[p] < i) {
+            return searchForIndex(i, p + 1, right);
+        } else {
+            return p;
+        }
+    }
+
+    private void insert(int k, int i, double value) {
+
+        if (Math.abs(value) < Vectors.EPS) {
+            return;
+        }
+
+        if (values.length < cardinality + 1) {
+            growup();
+        }
+
+        System.arraycopy(values, k, values, k + 1, cardinality - k);
+        System.arraycopy(indices, k, indices, k + 1, cardinality - k);
+
+//        for (int kk = cardinality; kk > k; kk--) {
+//            values[kk] = values[kk - 1];
+//            indices[kk] = indices[kk - 1];
+//        }
+
+        values[k] = value;
+        indices[k] = i;
+
+        cardinality++;
+    }
+
+    private void remove(int k) {
+
+        cardinality--;
+
+        System.arraycopy(values, k + 1, values, k, cardinality - k);
+        System.arraycopy(indices, k + 1, indices, k, cardinality - k);
+
+//        for (int kk = k; kk < cardinality; kk++) {
+//            values[kk] = values[kk + 1];
+//            indices[kk] = indices[kk + 1];
+//        }
+    }
+
     private void growup() {
 
-        int newSize = Math.min(length, (cardinality * 3) / 2 + 1);
+        if (values.length == length) {
+            throw new IllegalStateException("This vector can't grow up.");
+        }
 
-        double newValues[] = new double[newSize];
-        int newIndices[] = new int[newSize];
+        int capacity = Math.min(length, (cardinality * 3) / 2 + 1);
 
-        System.arraycopy(values, 0, newValues, 0, cardinality);
-        System.arraycopy(indices, 0, newIndices, 0, cardinality);
+        double $values[] = new double[capacity];
+        int $indices[] = new int[capacity];
 
-        this.values = newValues;
-        this.indices = newIndices;
+        System.arraycopy(values, 0, $values, 0, cardinality);
+        System.arraycopy(indices, 0, $indices, 0, cardinality);
+
+        values = $values;
+        indices = $indices;
     }
 
     private static int align(int length, int cardinality) {
-        return Math.min(length, ((cardinality % MINIMUM_SIZE) + 1)
+        return Math.min(length, ((cardinality / MINIMUM_SIZE) + 1)
                         * MINIMUM_SIZE);
     }
 }

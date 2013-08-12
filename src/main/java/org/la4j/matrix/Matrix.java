@@ -16,7 +16,9 @@
  * limitations under the License.
  * 
  * Contributor(s): Evgenia Krivova
- * 
+ *                 Julia Kostyukova
+ *                 Jakob Moellers
+ *                 Maxim Samoylov
  */
 
 package org.la4j.matrix;
@@ -26,11 +28,20 @@ import java.io.Externalizable;
 import org.la4j.decomposition.MatrixDecompositor;
 import org.la4j.factory.Factory;
 import org.la4j.inversion.MatrixInvertor;
+import org.la4j.matrix.functor.MatrixAccumulator;
 import org.la4j.matrix.functor.MatrixFunction;
 import org.la4j.matrix.functor.MatrixPredicate;
 import org.la4j.matrix.functor.MatrixProcedure;
 import org.la4j.vector.Vector;
 
+/**
+ * This interface represents real matrix.
+ * <p>
+ * <a href="http://mathworld.wolfram.com/Matrix.html">
+ * http://mathworld.wolfram.com/Matrix.html </a>
+ * </p>
+ * 
+ */
 public interface Matrix extends Externalizable {
 
     /**
@@ -50,8 +61,8 @@ public interface Matrix extends Externalizable {
     double get(int i, int j);
 
     /**
-     * Sets the (<code>i, j</code>) element of this matrix to <code>value</code>
-     * .
+     * Assigns the (<code>i, j</code>) element of this matrix to <code>value</code>.
+     * 
      * 
      * @param i
      *            row of matrix
@@ -63,21 +74,6 @@ public interface Matrix extends Externalizable {
     void set(int i, int j, double value);
 
     /**
-     * 
-     * @param i
-     * @param j
-     */
-    double unsafe_get(int i, int j);
-
-    /**
-     * 
-     * @param i
-     * @param j
-     * @param value
-     */
-    void unsafe_set(int i, int j, double value);
-
-    /**
      * Assigns all elements of this matrix to <code>value</code>.
      * 
      * @param value
@@ -85,58 +81,44 @@ public interface Matrix extends Externalizable {
     void assign(double value);
 
     /**
-     * Resizes this matrix to new size.
-     * 
-     * @param rows
-     *            new rows size
-     * @param columns
-     *            new columns size
-     */
-    void resize(int rows, int columns);
-
-    /**
-     * Swaps i and j rows of this matrix. TODO: here
+     * Swaps <code>i</code> and <code>j</code> rows of this matrix.
      * 
      * @param i
-     *            row
      * @param j
-     *            row to be replaced!!!
      */
     void swapRows(int i, int j);
 
     /**
-     * Swap i and i columns of matrix;
+     * Swaps <code>i</code> and <code>j</code> columns of this matrix.
      * 
      * @param i
-     *            column
      * @param j
-     *            column
      */
     void swapColumns(int i, int j);
 
     /**
-     * Get rows number of matrix;
+     * Gets rows number of this matrix.
      * 
      * @return rows number
      */
     int rows();
 
     /**
-     * Get columns number of matrix;
+     * Gets columns number of this matrix.
      * 
      * @return columns number
      */
     int columns();
 
     /**
-     * Transpose the matrix;
+     * Transposes this matrix.
      * 
      * @return transposed matrix
      */
     Matrix transpose();
 
     /**
-     * Transpose the matrix with specified factory;
+     * Transposes this matrix with specified <code>factory</code>.
      * 
      * @param factory
      * @return
@@ -144,16 +126,51 @@ public interface Matrix extends Externalizable {
     Matrix transpose(Factory factory);
 
     /**
-     * Scale matrix;
+     * Rotates a matrix by 90 degrees to the right
+     * 
+     * @return The rotated matrix
+     */
+    Matrix rotate();
+
+    /**
+     * Rotates a matrix by 90 degrees to the right
+     * 
+     * @return The rotated matrix
+     */
+    Matrix rotate(Factory factory);
+
+    /**
+     * Power operation for matrices. Matrix is returned to the power of n. This
+     * function uses the Exponentiation by squaring method.
+     * 
+     * @param n
+     *            The exponent
+     * @return Exponentiated matrix
+     */
+    Matrix power(int n);
+
+    /**
+     * Power operation for matrices. Matrix is returned to the power of n. This
+     * function uses the Exponentiation by squaring method.
+     * 
+     * @param n
+     *            The exponent
+     * @param factory
+     *            Factory for this matrix
+     * @return Exponentiated matrix
+     */
+    Matrix power(int n, Factory factory);
+
+    /**
+     * Scales this matrix by <code>value</code>.
      * 
      * @param value
-     *            matrix to be scaled
      * @return scaled matrix
      */
     Matrix multiply(double value);
 
     /**
-     * Multiply matrix to value with factory;
+     * Scales this matrix to <code>value</code> with <code>factory</code>.
      * 
      * @param value
      * @param factory
@@ -162,45 +179,25 @@ public interface Matrix extends Externalizable {
     Matrix multiply(double value, Factory factory);
 
     /**
-     * Multiply matrix by vector;
+     * Multiplies this matrix by <code>vector</code>.
      * 
      * @param vector
-     *            to be multiplied
      * @return multiplied matrix
      */
     Vector multiply(Vector vector);
 
     /**
-     * Multiply matrix by vector;
+     * Multiplies this matrix by <code>vector</code> with specified
+     * <code>factory</code>.
      * 
      * @param vector
-     *            to be multiplied
-     * @return multiplied matrix
-     */
-    Vector unsafe_multiply(Vector vector);
-
-    /**
-     * Multiply matrix by vector with specified factory;
-     * 
-     * @param vector
-     *            to be multiplied
      * @param factory
      * @return multiplied matrix
      */
     Vector multiply(Vector vector, Factory factory);
 
     /**
-     * Multiply matrix by vector with specified factory;
-     * 
-     * @param vector
-     *            to be multiplied
-     * @param factory
-     * @return multiplied matrix
-     */
-    Vector unsafe_multiply(Vector vector, Factory factory);
-
-    /**
-     * Multiply matrix by matrix;
+     * Multiplies this matrix by other <code>matrix</code>.
      * 
      * @param matrix
      *            to be multiplied
@@ -209,36 +206,16 @@ public interface Matrix extends Externalizable {
     Matrix multiply(Matrix matrix);
 
     /**
-     * Multiply matrix by matrix;
-     * 
-     * @param matrix
-     *            to be multiplied
-     * @return multiplied matrix
-     */
-    Matrix unsafe_multiply(Matrix matrix);
-
-    /**
-     * Multiply matrix to matrix with specified factory;
+     * Multiplies this matrix to other <code>matrix</code> with specified
+     * <code>factory</code>.
      * 
      * @param matrix
      * @param factory
-     * @return
-     * @throws MatrixException
      */
     Matrix multiply(Matrix matrix, Factory factory);
 
     /**
-     * Multiply matrix to matrix with specified factory;
-     * 
-     * @param matrix
-     * @param factory
-     * @return
-     * @throws MatrixException
-     */
-    Matrix unsafe_multiply(Matrix matrix, Factory factory);
-
-    /**
-     * Subtract value from matrix;
+     * Subtracts the <code>value</code> from this matrix.
      * 
      * @param value
      *            to be subtracted
@@ -247,16 +224,16 @@ public interface Matrix extends Externalizable {
     Matrix subtract(double value);
 
     /**
-     * Subtract value from matrix with specified factory;
+     * Subtracts <code>value</code> from this matrix with specified
+     * <code>factory</code>.
      * 
      * @param value
      * @param factory
-     * @return
      */
     Matrix subtract(double value, Factory factory);
 
     /**
-     * Subtract matrix by matrix;
+     * Subtracts other <code>matrix</code> by this matrix.
      * 
      * @param matrix
      *            to be subtracted
@@ -265,34 +242,16 @@ public interface Matrix extends Externalizable {
     Matrix subtract(Matrix matrix);
 
     /**
-     * Subtract matrix by matrix;
-     * 
-     * @param matrix
-     *            to be subtracted
-     * @return subtracted matrix
-     */
-    Matrix unsafe_subtract(Matrix matrix);
-
-    /**
-     * Subtract matrix from matrix with specified factory;
+     * Subtracts other <code>matrix</code> from this matrix with specified
+     * <code>factory</code>.
      * 
      * @param matrix
      * @param factory
-     * @return
      */
     Matrix subtract(Matrix matrix, Factory factory);
 
     /**
-     * Subtract matrix from matrix with specified factory;
-     * 
-     * @param matrix
-     * @param factory
-     * @return
-     */
-    Matrix unsafe_subtract(Matrix matrix, Factory factory);
-
-    /**
-     * Add value to matrix;
+     * Adds the <code>value</code> to this matrix.
      * 
      * @param value
      *            to be added
@@ -301,16 +260,16 @@ public interface Matrix extends Externalizable {
     Matrix add(double value);
 
     /**
-     * Add value to matrix with specified factory;
+     * Adds the <code>value</code> to this matrix with specified
+     * <code>factory</code>
      * 
      * @param value
      * @param factory
-     * @return
      */
     Matrix add(double value, Factory factory);
 
     /**
-     * Add matrix by matrix;
+     * Adds other <code>matrix</code> to this matrix.
      * 
      * @param matrix
      *            to be added
@@ -319,54 +278,48 @@ public interface Matrix extends Externalizable {
     Matrix add(Matrix matrix);
 
     /**
-     * Add matrix by matrix;
-     * 
-     * @param matrix
-     *            to be added
-     * @return added matrix
-     */
-    Matrix unsafe_add(Matrix matrix);;
-
-    /**
-     * Add matrix to matrix with specified factory;
+     * Adds other <code>matrix</code> to this matrix with specified
+     * <code>factory</code>.
      * 
      * @param matrix
      * @param factory
-     * @return
-     * @throws MatrixException
      */
     Matrix add(Matrix matrix, Factory factory);
 
     /**
-     * Add matrix to matrix with specified factory;
+     * Divides this matrix by <code>value</code>.
+     * 
+     * @param value
+     */
+    Matrix divide(double value);
+
+    /**
+     * Divides this matrix by <code>value</code> with specified
+     * <code>factory</code>.
+     * 
+     * @param value
+     * @param factory
+     */
+    Matrix divide(double value, Factory factory);
+
+    /**
+     * Calculates the Kronecker product.
      * 
      * @param matrix
-     * @param factory
      * @return
-     * @throws MatrixException
      */
-    Matrix unsafe_add(Matrix matrix, Factory factory);
+    Matrix kroneckerProduct(Matrix matrix);
 
     /**
-     * Dived matrix to value;
+     * Calculates the Kronecker product.
      * 
-     * @param value
+     * @param matrix
      * @return
      */
-    Matrix div(double value);
-
-    /**
-     * Dived matrix to value with specified factory;
-     * 
-     * @param value
-     * @param factory
-     * @return
-     */
-    Matrix div(double value, Factory factory);
+    Matrix kroneckerProduct(Matrix matrix, Factory factory);
 
     /**
      * Returns the "trace" of this matrix.
-     * 
      * <p>
      * See <a href="http://mathworld.wolfram.com/MatrixTrace.html">
      * http://mathworld.wolfram.com/MatrixTrace.html</a> for more details.
@@ -381,11 +334,41 @@ public interface Matrix extends Externalizable {
      * 
      * @return the product of diagonal elements of this matrix
      */
+    double diagonalProduct();
+
+    /**
+     * Productizes up all elements of the matrix
+     * 
+     * @return the product of all elements of the matrix
+     */
     double product();
 
     /**
-     * Returns the "determinant" of this matrix.
+     * Returns Hadamard product for two matrices
+     * @param 
+     *            matrix multiplier matrix
+     * @return Hadamard product for two matrices
+     */
+    Matrix hadamardProduct(Matrix matrix);
+
+    /**
+     * Returns Hadamard product for two matrices
+     * @param 
+     *            matrix multiplier matrix
+     * @param factory
+     * @return Hadamard product for two matrices
+     */
+    Matrix hadamardProduct(Matrix matrix, Factory factory);
+
+    /**
+     * Summarizes up all elements of the matrix
      * 
+     * @return the sum of all elements of the matrix
+     */
+    double sum();
+
+    /**
+     * Returns the "determinant" of this matrix.
      * <p>
      * See <a href="http://mathworld.wolfram.com/Determinant.html">
      * http://mathworld.wolfram.com/Determinant.html</a> for more details.
@@ -401,167 +384,394 @@ public interface Matrix extends Externalizable {
      * See <a href="http://mathworld.wolfram.com/MatrixRank.html">
      * http://mathworld.wolfram.com/MatrixRank.html</a> for more details.
      * </p>
-     * @ return the "rank" of this matrix
+     * @return the "rank" of this matrix
      */
-    
     int rank();
-    
+
     /**
-     * Get the i-th row of matrix;
+     * Gets the <code>i</code> row of this matrix.
      * 
      * @param i
-     *            row
      * @return the i-th row
      */
-    
     Vector getRow(int i);
 
     /**
-     * Get the i-th row of matrix;
+     * Gets the <code>i</code> row of this matrix.
      * 
      * @param i
-     *            row
      * @return the i-th row
      */
     Vector getRow(int i, Factory factory);
 
     /**
-     * Get the i-th column of matrix;
+     * Gets the <code>i</code> column of this matrix.
      * 
-     * @param i
-     *            column
+     * @param j
      * @return the i-th column
      */
-    Vector getColumn(int i);
+    Vector getColumn(int j);
 
     /**
-     * Get the i-th column of matrix;
+     * Gets the <code>i</code> column of this matrix.
      * 
-     * @param i
-     *            column
+     * @param j
      * @return the i-th column
      */
-    Vector getColumn(int i, Factory factory);
+    Vector getColumn(int j, Factory factory);
 
     /**
-     * Set the i-th row of matrix;
+     * Sets the <code>i</code> row of this matrix.
      * 
      * @param i
-     *            row
      * @param row
      */
     void setRow(int i, Vector row);
 
     /**
-     * Set the i-th column of matrix;
+     * Sets the <code>i</code> column of this matrix.
      * 
-     * @param i
-     *            column
+     * @param j
      * @param column
      */
-    void setColumn(int i, Vector column);
+    void setColumn(int j, Vector column);
 
     /**
-     * Convert matrix to triangle;
-     * 
-     * @return
+     * Converts this matrix to triangle matrix.
      */
     Matrix triangularize();
 
     /**
-     * Convert matrix to triangle with factory;
+     * Converts this matrix to triangle with <code>factory</code>.
      * 
      * @param factory
-     * @return
      */
     Matrix triangularize(Factory factory);
 
     /**
-     * Decompose matrix;
+     * Decomposes this matrix.
      * 
      * @param decompositor
-     * @return
      */
     Matrix[] decompose(MatrixDecompositor decompositor);
 
     /**
-     * Decompose matrix;
-     * 
-     * @param decompositor
-     * @param factory
-     * @return
-     */
+	 * Decomposes this matrix with <code>decompositor</code> and
+	 * <code>factory</code>.
+	 * 
+	 * @param decompositor
+	 * @param factory
+	 */
     Matrix[] decompose(MatrixDecompositor decompositor, Factory factory);
 
     /**
-     * Invert matrix;
+     * Inverts this matrix.
      * 
      * @param invertor
-     * @return
      */
     Matrix inverse(MatrixInvertor invertor);
 
     /**
-     * Invert matrix;
+     * Inverts this matrix.
      * 
      * @param invertor
      * @param factory
-     * @return
      */
     Matrix inverse(MatrixInvertor invertor, Factory factory);
 
     /**
-     * Get blank matrix;
+     * Gets blank matrix.
      * 
      * @return blanked matrix
      */
     Matrix blank();
 
     /**
-     * Get blank matrix with factory;
+     * Gets blank matrix with <code>factory</code>.
      * 
      * @param factory
-     * @return
      */
     Matrix blank(Factory factory);
 
     /**
-     * Get copy of matrix;
-     * 
-     * @return
+     * Gets copy of this matrix.
      */
     Matrix copy();
 
     /**
-     * Get copy of matrix with factory;
+     * Gets copy of this matrix with <code>factory</code>.
      * 
      * @param factory
-     * @return
      */
     Matrix copy(Factory factory);
 
     /**
+     * Resizes this matrix to new size.
      * 
-     * @param function
+     * @param rows
+     *            new rows size
+     * @param columns
+     *            new columns size
+     */
+    Matrix resize(int rows, int columns);
+
+    /**
+     * Resizes this matrix to new size.
+     * 
+     * @param rows
+     *            new rows size
+     * @param columns
+     *            new columns size
+     */
+    Matrix resize(int rows, int columns, Factory factory);
+
+    /**
+     * Resizes this matrix to new rows size.
+     * 
+     * @param rows
+     * @return
+     */
+    Matrix resizeRows(int rows);
+
+    /**
+     * Resizes this matrix to new rows size.
+     * 
+     * @param rows
+     * @return
+     */
+    Matrix resizeRows(int rows, Factory factory);
+
+    /**
+     * Resizes this matrix to new columns size.
+     * 
+     * @param columns
+     * @return
+     */
+    Matrix resizeColumns(int columns);
+
+    /**
+     * Resizes this matrix to new columns size.
+     * 
+     * @param columns
+     * @return
+     */
+    Matrix resizeColumns(int columns, Factory factory);
+
+    /**
+     * Matrix that contains the same elements but with the elements shuffled
+     * around (which might also result in the same matrix (with a small
+     * likelihood)).
+     * 
+     * @return The shuffled matrix.
+     */
+    Matrix shuffle();
+
+    /**
+     * Matrix that contains the same elements but with the elements shuffled
+     * around (which might also result in the same matrix (with a small
+     * likelihood)).
+     * 
+     * @param factory
+     *            The factory to use for this
+     * @return The shuffled matrix.
+     */
+    Matrix shuffle(Factory factory);
+
+    /**
+     * 
+     * 
+     * @param fromRow
+     * @return
+     */
+    Matrix slice(int fromRow, int fromColumn, int untilRow, int untilColumn);
+
+    /**
+     * 
+     * 
+     * @param fromRow
+     * @return
+     */
+    Matrix slice(int fromRow, int fromColumn, int untilRow, int untilColumn, 
+                 Factory factory);
+
+    /**
+     * 
+     * @param untilRow
+     * @param untilColumn
+     * @return
+     */
+    Matrix sliceTopLeft(int untilRow, int untilColumn);
+
+    /**
+     * 
+     * @param untilRow
+     * @param untilColumn
+     * @return
+     */
+    Matrix sliceTopLeft(int untilRow, int untilColumn, Factory factory);
+
+    /**
+     * 
+     * @param fromRow
+     * @param fromColumn
+     * @return
+     */
+    Matrix sliceBottomRight(int fromRow, int fromColumn);
+
+    /**
+     * 
+     * @param fromRow
+     * @param fromColumn
+     * @return
+     */
+    Matrix sliceBottomRight(int fromRow, int fromColumn, Factory factory);
+
+    /**
+     * Returns the factory associated with this matrix.
+     * 
+     * @return factory
+     */
+    Factory factory();
+
+    /**
+     * Applies the <code>procedure</code> to every element of this matrix.
+     * @param procedure
      */
     void each(MatrixProcedure procedure);
 
     /**
+     * Applies the <code>procedure</code> to every element in the
+     * <code>i</code> row of this matrix.
+     * @param procedure
+     * @param i
+     */
+    void eachInRow(int i, MatrixProcedure procedure);
+
+    /**
+     * Applies the <code>procedure</code> to every element in the
+     * <code>i</code> column of this matrix.
+     * @param procedure
+     * @param j
+     */
+    void eachInColumn(int j, MatrixProcedure procedure);
+
+    /**
+     * Applies the <code>procedure</code> to every non-zero element in the
+     * <code>i</code> column of this matrix.
+     * @param procedure
+     */
+    void eachNonZero(MatrixProcedure procedure);
+
+    /**
+     * Applies the <code>procedure</code> to every non-zero element in the
+     * <code>i</code> row of this matrix.
+     * @param procedure
+     * @param i
+     */
+    void eachNonZeroInRow(int i, MatrixProcedure procedure);
+
+    /**
+     * Applies the <code>procedure</code> to every non-zero element in the
+     * <code>i</code> column of this matrix.
+     * @param procedure
+     * @param j
+     */
+    void eachNonZeroInColumn(int j, MatrixProcedure procedure);
+
+    /**
+     * Builds a new matrix by applying a <code>function</code> to all elements
+     * of this matrix.
      * 
      * @param function
      */
     Matrix transform(MatrixFunction function);
 
     /**
+     * Builds a new matrix by applying a <code>function</code> to all elements
+     * of this matrix with using of specified <code>factory</code>.
      * 
      * @param function
      */
     Matrix transform(MatrixFunction function, Factory factory);
 
     /**
+     * Builds a new matrix by applying a <code>function</code> to (
+     * <code>i</code>, <code>j</code>) element of this matrix.
      * 
-     * @param predidate
+     * @param i
+     * @param j
+     * @param function
+     */
+    Matrix transform(int i, int j, MatrixFunction function);
+
+    /**
+     * Builds a new matrix by applying a <code>function</code> to (
+     * <code>i</code>, <code>j</code>) element of this matrix with using of
+     * specified <code>factory</code>.
+     * 
+     * @param i
+     * @param j
+     * @param function
+     * @param factory
+     */
+    Matrix transform(int i, int j, MatrixFunction function, Factory factory);
+
+    /**
+     * Updates all elements of this matrix by applying <code>function</code>.
+     * 
+     * @param function
+     */
+    void update(MatrixFunction function);
+
+    /**
+     * Updates (<code>i</code>, <code>j</code>) element of this matrix by
+     * applying <code>function</code>.
+     * 
+     * @param i
+     * @param j
+     * @param function
+     */
+    void update(int i, int j, MatrixFunction function);
+
+    /**
+     * 
+     * @param accumulator
      * @return
      */
+    double fold(MatrixAccumulator accumulator);
+
+    /**
+     * 
+     * @param i
+     * @param accumulator
+     * @return
+     */
+    double foldRow(int i, MatrixAccumulator accumulator);
+
+    /**
+     * 
+     * @param j
+     * @param accumulator
+     * @return
+     */
+    double foldColumn(int j, MatrixAccumulator accumulator);
+
+    /**
+     * Checks whether this matrix compiles with <code>predicate</code>.
+     * 
+     * @param predidate
+     * @return <code>true</code> if this matrix compiles with
+     *         <code>predicate</code>.
+     */
     boolean is(MatrixPredicate predidate);
+
+    /**
+     * Wraps this matrix with safe interface
+     */
+    Matrix safe();
+
+    /**
+     * Wraps this matrix with unsafe interface
+     */
+    Matrix unsafe();
 }

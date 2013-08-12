@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  * 
- * Contributor(s): -
+ * Contributor(s): Yuriy Drozd
  * 
  */
 
@@ -24,19 +24,19 @@ package org.la4j.decomposition;
 import junit.framework.Test;
 import junit.framework.TestSuite;
 
-public class SingularValueDecompositorTest extends AbstractDecompositorTest {
+public class CroutDecompositorTest extends AbstractDecompositorTest {
 
     @Override
-    public MatrixDecompositor decompositor() {
-        return new SingularValueDecompositor();
+	public MatrixDecompositor decompositor() {
+	    return new CroutDecompositor();
     }
 
     @Override
     public double[][] input() {
         return new double[][] {
-                { 2.0, 0.0, 0.0 }, 
-                { 0.0, 4.0, 0.0 }, 
-                { 0.0, 0.0, 8.0 } 
+                { 1.0, 0.0, 2.0 }, 
+                { 0.0, 10.0, 0.0 }, 
+                { 2.0, 0.0, 9.0 } 
         };
     }
 
@@ -44,24 +44,20 @@ public class SingularValueDecompositorTest extends AbstractDecompositorTest {
     public double[][][] output() {
         return new double[][][] {
                 { 
-                    { 0.0, 0.0, -1.0 }, 
-                    { 0.0, -1.0, 0.0 }, 
-                    { 1.0, 0.0, 0.0 } 
+                    { 1.0, 0.0, 0.0 },
+                    { 0.0, 10.0, 0.0 },
+                    { 2.0, 0.0, 5.0 } 
                 },
                 { 
-                    { 8.0, 0.0, 0.0 }, 
-                    { 0.0, 4.0, 0.0 }, 
-                    { 0.0, 0.0, 2.0 } 
-                },
-                { 
-                    { 0.0, 0.0, -1.0 }, 
-                    { 0.0, -1.0, 0.0 }, 
-                    { 1.0, 0.0, 0.0 } 
+
+                    { 1.0, 0.0, 2.0 }, 
+                    { 0.0, 1.0, 0.0 }, 
+                    { 0.0, 0.0, 1.0 } 
                 } 
         };
     }
 
     public static Test suite() {
-        return new TestSuite(SingularValueDecompositorTest.class);
+        return new TestSuite(CroutDecompositorTest.class);
     }
 }

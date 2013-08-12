@@ -25,10 +25,9 @@ import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 
-import org.la4j.factory.Basic1DFactory;
 import org.la4j.vector.AbstractVector;
 import org.la4j.vector.Vector;
-import org.la4j.vector.source.UnsafeVectorSource;
+import org.la4j.vector.Vectors;
 import org.la4j.vector.source.VectorSource;
 
 public class BasicVector extends AbstractVector implements DenseVector {
@@ -42,7 +41,7 @@ public class BasicVector extends AbstractVector implements DenseVector {
     }
 
     public BasicVector(Vector vector) {
-        this(new UnsafeVectorSource(vector));
+        this(Vectors.asUnsafeSource(vector));
     }
 
     public BasicVector(VectorSource source) {
@@ -58,46 +57,22 @@ public class BasicVector extends AbstractVector implements DenseVector {
     }
 
     public BasicVector(double array[]) {
-        super(new Basic1DFactory(), array.length);
+        super(Vectors.BASIC_FACTORY, array.length);
         this.self = array;
     }
 
     @Override
-    public double unsafe_get(int i) {
+    public double get(int i) {
         return self[i];
     }
 
     @Override
-    public void unsafe_set(int i, double value) {
+    public void set(int i, double value) {
         self[i] = value;
     }
 
     @Override
-    public void resize(int length) {
-
-        if (length < 0) {
-            throw new IllegalArgumentException("Wrong dimension: " + length);
-        }
-
-        if (length == this.length) {
-            return;
-        }
-
-        if (length < this.length) {
-            this.length = length;
-        } else {
-            double newSelf[] = new double[length];
-            System.arraycopy(self, 0, newSelf, 0, self.length);
-
-            this.self = newSelf;
-            this.length = length;
-        }
-    }
-
-    @Override
     public void swap(int i, int j) {
-        ensureIndexInLength(i);
-        ensureIndexInLength(j);
 
         if (i == j) {
             return;
@@ -109,10 +84,30 @@ public class BasicVector extends AbstractVector implements DenseVector {
     }
 
     @Override
+    public Vector copy() {
+        return resize(length);
+    }
+
+    @Override
+    public Vector resize(int length) {
+        ensureLengthIsNotNegative(length);
+
+        double $self[] = new double[length];
+        System.arraycopy(self, 0, $self, 0, Math.min($self.length, self.length));
+
+        return new BasicVector($self);
+    }
+
+    @Override
     public double[] toArray() {
         double result[] = new double[length];
         System.arraycopy(self, 0, result, 0, length);
         return result;
+    }
+
+    @Override
+    public Vector safe() {
+        return new DenseSafeVector(this);
     }
 
     @Override

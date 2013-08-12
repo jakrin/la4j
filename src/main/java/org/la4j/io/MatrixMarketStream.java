@@ -15,7 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  * 
- * Contributor(s): -
+ * Contributor(s): Alessio Placitelli
+ *                 Maxim Samoylov
  * 
  */
 
@@ -29,11 +30,13 @@ import java.util.Locale;
 import java.util.StringTokenizer;
 
 import org.la4j.factory.Factory;
+import org.la4j.matrix.Matrices;
 import org.la4j.matrix.Matrix;
 import org.la4j.matrix.dense.DenseMatrix;
 import org.la4j.matrix.functor.MatrixProcedure;
 import org.la4j.matrix.sparse.SparseMatrix;
 import org.la4j.vector.Vector;
+import org.la4j.vector.Vectors;
 import org.la4j.vector.dense.DenseVector;
 import org.la4j.vector.functor.VectorProcedure;
 import org.la4j.vector.sparse.SparseVector;
@@ -52,7 +55,8 @@ public class MatrixMarketStream extends AbstractStream
         @Override
         public void apply(int i, double value) {
             try {
-                writer.write(i + " " + String.format(Locale.US, "%.12f", value));
+                // In Matrix Market specification indices are 1-based
+                writer.write((i + 1) + " " + String.format(Locale.US, "%.12f", value));
                 writer.newLine();
             } catch (IOException expected) {
                 throw new IllegalArgumentException("Can't write with writer.");
@@ -71,7 +75,7 @@ public class MatrixMarketStream extends AbstractStream
         @Override
         public void apply(int i, int j, double value) {
             try {
-                writer.write(i + " " + j + " " 
+                writer.write((i + 1) + " " + (j + 1) + " "
                         + String.format(Locale.US, "%.12f", value));
                 writer.newLine();
             } catch (IOException expected) {
@@ -91,10 +95,17 @@ public class MatrixMarketStream extends AbstractStream
     }
 
     @Override
+    public Vector readVector() throws IOException {
+        return readVector(null);
+    }
+
+    @Override
     public Vector readVector(Factory factory) throws IOException {
         ensureReaderInitialized();
+
         Vector vector = parseVector(factory);
         closeReader();
+
         return vector;
     }
 
@@ -116,9 +127,16 @@ public class MatrixMarketStream extends AbstractStream
     @Override
     public Matrix readMatrix(Factory factory) throws IOException {
         ensureReaderInitialized();
+
         Matrix matrix = parseMatrix(factory);
         closeReader();
+
         return matrix;
+    }
+
+    @Override
+    public Matrix readMatrix() throws IOException {
+        return readMatrix(null);
     }
 
     @Override
@@ -143,7 +161,7 @@ public class MatrixMarketStream extends AbstractStream
         writer.write(vector.length() + " " + vector.cardinality());
         writer.newLine();
 
-        vector.each(new SparseVectorWriteProcedure(writer));
+        vector.eachNonZero(new SparseVectorWriteProcedure(writer));
     }
 
     private void writeDenseVector(DenseVector vector) throws IOException {
@@ -154,7 +172,7 @@ public class MatrixMarketStream extends AbstractStream
         writer.newLine();
 
         for (int i = 0; i < vector.length(); i++) {
-            double value = vector.unsafe_get(i);
+            double value = vector.get(i);
             writer.write(String.format(Locale.US, "%.12f", value));
             writer.newLine();
         }
@@ -168,7 +186,7 @@ public class MatrixMarketStream extends AbstractStream
                 + matrix.cardinality());
         writer.newLine();
 
-        matrix.each(new SparseMatrixWriteProcedure(writer));
+        matrix.eachNonZero(new SparseMatrixWriteProcedure(writer));
     }
 
     private void writeDenseMatrix(DenseMatrix matrix) throws IOException {
@@ -180,7 +198,7 @@ public class MatrixMarketStream extends AbstractStream
 
         for (int i = 0; i < matrix.rows(); i++) {
             for (int j = 0; j < matrix.columns(); j++) {
-                double value = matrix.unsafe_get(i, j);
+                double value = matrix.get(i, j);
                 writer.write(String.format(Locale.US, "%.12f", value));
                 writer.newLine();
             }
@@ -197,11 +215,14 @@ public class MatrixMarketStream extends AbstractStream
         ensureNext("general");
 
         if (token.equals("array")) {
-            return parseDenseVector(factory);
+            return parseDenseVector(factory == null ? 
+                                    Vectors.DEFAULT_DENSE_FACTORY : factory);
         } else if (token.equals("coordinate")) {
-            return parseSparseVector(factory);
+            return parseSparseVector(factory == null ? 
+                                     Vectors.DEFAULT_SPARSE_FACTORY : factory);
         } else {
-            throw new IOException();
+            throw new IOException("Unexpected token at stream: \"" 
+                                  + token + "\".");
         }
     }
 
@@ -212,7 +233,7 @@ public class MatrixMarketStream extends AbstractStream
 
         for (int i = 0; i < length; i++) {
             double value = Double.valueOf(nextToken());
-            vector.unsafe_set(i, value);
+            vector.set(i, value);
         }
 
         return vector;
@@ -225,10 +246,11 @@ public class MatrixMarketStream extends AbstractStream
         Vector vector = factory.createVector(length);
 
         for (int k = 0; k < cardinality; k++) {
-            int i = Integer.valueOf(nextToken());
+            // In Matrix Market specification indices are 1-based
+            int i = Integer.valueOf(nextToken()) - 1;
             double value = Double.valueOf(nextToken());
 
-            vector.unsafe_set(i, value);
+            vector.set(i, value);
         }
 
         return vector;
@@ -244,11 +266,14 @@ public class MatrixMarketStream extends AbstractStream
         ensureNext("general");
 
         if (token.equals("array")) {
-            return parseDenseMatrix(factory);
+            return parseDenseMatrix(factory == null ?
+                                    Matrices.DEFAULT_DENSE_FACTORY : factory);
         } else if (token.equals("coordinate")) {
-            return parseSparseMatrix(factory);
+            return parseSparseMatrix(factory == null ?
+                                     Matrices.DEFAULT_SPARSE_FACTORY : factory);
         } else {
-            throw new IOException();
+            throw new IOException("Unexpected token at stream: \"" 
+                                  + token + "\".");
         }
     }
 
@@ -261,7 +286,7 @@ public class MatrixMarketStream extends AbstractStream
         for (int i = 0; i < rows; i++) {
             for (int j = 0; j < columns; j++) {
                 double value = Double.valueOf(nextToken());
-                matrix.unsafe_set(i, j, value);
+                matrix.set(i, j, value);
             }
         }
 
@@ -276,11 +301,12 @@ public class MatrixMarketStream extends AbstractStream
         Matrix matrix = factory.createMatrix(rows, columns);
 
         for (int k = 0; k < cardinality; k++) {
-            int i = Integer.valueOf(nextToken());
-            int j = Integer.valueOf(nextToken());
+            // In Matrix Market specification indices are 1-based, but we need a 0-based index
+            int i = Integer.valueOf(nextToken()) - 1;
+            int j = Integer.valueOf(nextToken()) - 1;
             double value = Double.valueOf(nextToken());
 
-            matrix.unsafe_set(i, j, value);
+            matrix.set(i, j, value);
         }
 
         return matrix;

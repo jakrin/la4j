@@ -15,14 +15,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  * 
- * Contributor(s): -
+ * Contributor(s): Daniel Renshaw
+ *                 Ewald Grusk
+ *                 Jakob Moellers
+ *                 Maxim Samoylov
  * 
  */
 
 package org.la4j.vector;
 
+import java.util.Random;
+
 import org.la4j.factory.Factory;
 import org.la4j.matrix.Matrices;
+import org.la4j.matrix.Matrix;
+import org.la4j.vector.functor.VectorAccumulator;
 import org.la4j.vector.functor.VectorFunction;
 import org.la4j.vector.functor.VectorPredicate;
 import org.la4j.vector.functor.VectorProcedure;
@@ -38,31 +45,25 @@ public abstract class AbstractVector implements Vector {
     }
 
     protected AbstractVector(Factory factory, int length) {
+        ensureLengthIsNotNegative(length);
+
         this.factory = factory;
         this.length = length;
     }
 
     @Override
+    public void swap(int i, int j) {
+        double s = get(i);
+        set(i, get(j));
+        set(j, s);
+    }
+
+    @Override
     public void assign(double value) {
         for (int i = 0; i < length; i++) {
-            unsafe_set(i, value);
+            set(i, value);
         }
     }
-
-    @Override
-    public double get(int i) {
-        ensureIndexInLength(i);
-
-        return unsafe_get(i);
-    }
-
-    @Override
-    public void set(int i, double value) {
-        ensureIndexInLength(i);
-
-        unsafe_set(i, value);
-    }
-
 
     @Override
     public int length() {
@@ -81,7 +82,7 @@ public abstract class AbstractVector implements Vector {
         Vector result = blank(factory);
 
         for (int i = 0; i < length; i++) {
-            result.unsafe_set(i, unsafe_get(i) + value);
+            result.set(i, get(i) + value);
         }
 
         return result;
@@ -101,25 +102,14 @@ public abstract class AbstractVector implements Vector {
         }
 
         if (length != vector.length()) {
-            throw new IllegalArgumentException("Worong vector length: " 
+            throw new IllegalArgumentException("Wrong vector length: " 
                                                + vector.length());
         }
-
-        return unsafe_add(vector, factory);
-    }
-
-    @Override
-    public Vector unsafe_add(Vector vector) {
-        return unsafe_add(vector, factory);
-    }
-
-    @Override
-    public Vector unsafe_add(Vector vector, Factory factory) {
 
         Vector result = blank(factory);
 
         for (int i = 0; i < length; i++) {
-            result.unsafe_set(i, unsafe_get(i) + vector.unsafe_get(i));
+            result.set(i, get(i) + vector.get(i));
         }
 
         return result;
@@ -137,19 +127,19 @@ public abstract class AbstractVector implements Vector {
         Vector result = blank(factory);
 
         for (int i = 0; i < length; i++) {
-            result.unsafe_set(i, unsafe_get(i) * value);
+            result.set(i, get(i) * value);
         }
 
         return result;
     }
 
     @Override
-    public Vector multiply(Vector vector) {
-        return multiply(vector, factory);
+    public Vector hadamardProduct(Vector vector) {
+        return hadamardProduct(vector, factory);
     }
 
     @Override
-    public Vector multiply(Vector vector, Factory factory) {
+    public Vector hadamardProduct(Vector vector, Factory factory) {
         ensureFactoryIsNotNull(factory);
 
         if (vector == null) {
@@ -161,21 +151,44 @@ public abstract class AbstractVector implements Vector {
                                                + vector.length());
         }
 
-        return unsafe_multiply(vector, factory);
-    }
-
-    @Override
-    public Vector unsafe_multiply(Vector vector) {
-        return unsafe_multiply(vector, factory);
-    }
-
-    @Override
-    public Vector unsafe_multiply(Vector vector, Factory factory) {
-
         Vector result = blank(factory);
 
         for (int i = 0; i < length; i++) {
-            result.unsafe_set(i, unsafe_get(i) * vector.unsafe_get(i));
+            result.set(i, get(i) * vector.get(i));
+        }
+
+        return result;
+    }
+
+    @Override
+    public Vector multiply(Matrix matrix) {
+        return multiply(matrix, factory);
+    }
+
+    @Override
+    public Vector multiply(Matrix matrix, Factory factory) {
+        ensureFactoryIsNotNull(factory);
+
+        if (matrix == null) {
+            throw new IllegalArgumentException("Matrix can't be null.");
+        }
+
+        if (length != matrix.rows()) {
+            throw new IllegalArgumentException("Wrong matrix dimenstions: " 
+                                + matrix.rows() + "x" + matrix.columns() + ".");
+        }
+
+        Vector result = factory.createVector(matrix.columns());
+
+        for (int j = 0; j < matrix.columns(); j++) {
+
+            double summand = 0.0;
+
+            for (int i = 0; i < matrix.rows(); i++) {
+                summand += get(i) * matrix.get(i, j);
+            }
+
+            result.set(j, summand);
         }
 
         return result;
@@ -198,31 +211,48 @@ public abstract class AbstractVector implements Vector {
 
     @Override
     public Vector subtract(Vector vector, Factory factory) {
-        return add(vector.multiply(-1.0), factory);
+        ensureFactoryIsNotNull(factory);
+
+        if (vector == null) {
+            throw new IllegalArgumentException("Vector can't be null.");
+        }
+
+        if (length != vector.length()) {
+            throw new IllegalArgumentException("Wrong vector length: " 
+                                               + vector.length());
+        }
+
+        Vector result = blank(factory);
+
+        for (int i = 0; i < length; i++) {
+            result.set(i, get(i) - vector.get(i));
+        }
+
+        return result;
     }
 
     @Override
-    public Vector unsafe_subtract(Vector vector) {
-        return unsafe_subtract(vector, factory);
+    public Vector divide(double value) {
+        return divide(value, factory);
     }
 
     @Override
-    public Vector unsafe_subtract(Vector vector, Factory factory) {
-        return unsafe_add(vector.multiply(-1.0), factory);
-    }
-
-    @Override
-    public Vector div(double value) {
-        return div(value, factory);
-    }
-
-    @Override
-    public Vector div(double value, Factory factory) {
+    public Vector divide(double value, Factory factory) {
         return multiply(1.0 / value, factory);
     }
 
     @Override
-    public double product(Vector vector) {
+    public double product() {
+        return fold(Vectors.asProductAccumulator(1));
+    }
+
+    @Override
+    public double sum() {
+        return fold(Vectors.asSumAccumulator(0));
+    }
+
+    @Override
+    public double innerProduct(Vector vector) {
 
         if (vector == null) {
             throw new IllegalArgumentException("Vector can't be null.");
@@ -236,7 +266,31 @@ public abstract class AbstractVector implements Vector {
         double result = 0.0;
 
         for (int i = 0; i < length; i++) {
-            result += unsafe_get(i) * vector.unsafe_get(i);
+            result += get(i) * vector.get(i);
+        }
+
+        return result;
+    }
+
+    @Override
+    public Matrix outerProduct(Vector vector) {
+        return outerProduct(vector, factory);
+    }
+
+    @Override
+    public Matrix outerProduct(Vector vector, Factory factory) {
+        ensureFactoryIsNotNull(factory);
+
+        if (vector == null) {
+            throw new IllegalArgumentException("Vector can't be null.");
+        }
+        
+        Matrix result = factory.createMatrix(length, vector.length());
+
+        for (int i = 0; i < length; i++) {
+            for (int j = 0; j < vector.length(); j++) {
+                result.set(i, j, get(i) * vector.get(j));
+            }
         }
 
         return result;
@@ -244,7 +298,7 @@ public abstract class AbstractVector implements Vector {
 
     @Override
     public double norm() {
-        return Math.sqrt(product(this));
+        return Math.sqrt(innerProduct(this));
     }
 
     @Override
@@ -254,7 +308,7 @@ public abstract class AbstractVector implements Vector {
 
     @Override
     public Vector normalize(Factory factory) {
-        return div(norm(), factory);
+        return divide(norm(), factory);
     }
 
     @Override
@@ -282,9 +336,104 @@ public abstract class AbstractVector implements Vector {
     }
 
     @Override
+    public Vector resize(int length) {
+        return resize(length, factory);
+    }
+
+    @Override
+    public Vector resize(int length, Factory factory) {
+        ensureFactoryIsNotNull(factory);
+
+        Vector result = factory.createVector(length);
+
+        for (int i = 0; i < Math.min(length, this.length); i++) {
+            result.set(i, get(i));
+        }
+
+        return result;
+    }
+
+    @Override
+    public Vector shuffle() {
+        return shuffle(factory);
+    }
+
+    @Override
+    public Vector shuffle(Factory factory) {
+        ensureFactoryIsNotNull(factory);
+
+        Vector result = copy(factory);
+
+        // Conduct Fisher-Yates shuffle
+        Random rnd = new Random();
+
+        for (int i = 0; i < length; i++) {
+            int ii = rnd.nextInt(length - i) + i;
+
+            double a = result.get(ii);
+            result.set(ii, result.get(i));
+            result.set(i, a);
+        }
+
+        return result;
+    }
+
+    @Override
+    public Vector sliceLeft(int until) {
+        return slice(0, until, factory);
+    }
+
+    @Override
+    public Vector sliceLeft(int until, Factory factory) {
+        return slice(0, until, factory);
+    }
+
+    @Override
+    public Vector sliceRight(int from) {
+        return slice(from, length, factory);
+    }
+
+    @Override
+    public Vector sliceRight(int from, Factory factory) {
+        return slice(from, length, factory);
+    }
+
+    @Override
+    public Vector slice(int from, int until) {
+        return slice(from, until, factory);
+    }
+
+    @Override
+    public Vector slice(int from, int until, Factory factory) {
+        ensureFactoryIsNotNull(factory);
+
+        Vector result = factory.createVector(until - from);
+
+        for (int i = from; i < until; i++) {
+            result.set(i - from, get(i));
+        }
+
+        return result;
+    }
+
+    @Override
+    public Factory factory() {
+        return factory;
+    }
+
+    @Override
     public void each(VectorProcedure procedure) {
         for (int i = 0; i < length; i++) {
-            procedure.apply(i, unsafe_get(i));
+            procedure.apply(i, get(i));
+        }
+    }
+
+    @Override
+    public void eachNonZero(VectorProcedure procedure) {
+        for (int i = 0; i < length; i++) {
+            if (Math.abs(get(i)) > Vectors.EPS) {
+                procedure.apply(i, get(i));
+            }
         }
     }
 
@@ -299,10 +448,46 @@ public abstract class AbstractVector implements Vector {
         Vector result = blank(factory);
 
         for (int i = 0; i < length; i++) {
-            result.unsafe_set(i, function.evaluate(i, unsafe_get(i)));
+            result.set(i, function.evaluate(i, get(i)));
         }
 
         return result;
+    }
+
+    @Override
+    public Vector transform(int i, VectorFunction function) {
+        return transform(i, function, factory);
+    }
+
+    @Override
+    public Vector transform(int i, VectorFunction function, Factory factory) {
+
+        Vector result = copy(factory);
+        result.set(i, function.evaluate(i, get(i)));
+
+        return result;
+    }
+
+    @Override
+    public void update(VectorFunction function) {
+        for (int i = 0; i < length; i++) {
+            set(i, function.evaluate(i, get(i)));
+        }
+    }
+
+    @Override
+    public void update(int i, VectorFunction function) {
+        set(i, function.evaluate(i, get(i)));
+    }
+
+    @Override
+    public double fold(VectorAccumulator accumulator) {
+
+        for (int i = 0; i < length; i++) {
+            accumulator.update(i, get(i));
+        }
+
+        return accumulator.accumulate();
     }
 
     @Override
@@ -311,10 +496,15 @@ public abstract class AbstractVector implements Vector {
         boolean result = true;
 
         for (int i = 0; i < length; i++) {
-            result = result && predicate.test(i, unsafe_get(i)); 
+            result = result && predicate.test(i, get(i)); 
         }
 
         return result;
+    }
+
+    @Override
+    public Vector unsafe() {
+        return this;
     }
 
     @Override
@@ -323,7 +513,7 @@ public abstract class AbstractVector implements Vector {
         int result = 17;
 
         for (int i = 0; i < length; i++) {
-            long value = (long) unsafe_get(i);
+            long value = (long) get(i);
             result = 37 * result + (int) (value ^ (value >>> 32));
         }
 
@@ -353,8 +543,8 @@ public abstract class AbstractVector implements Vector {
         boolean result = true;
 
         for (int i = 0; result && i < length; i++) {
-            double a = unsafe_get(i);
-            double b = vector.unsafe_get(i);
+            double a = get(i);
+            double b = vector.get(i);
 
             double diff = Math.abs(a - b);
 
@@ -372,7 +562,7 @@ public abstract class AbstractVector implements Vector {
 
         sb.append("[");
         for (int i = 0; i < length; i++) {
-            sb.append(String.format("%6.3f", unsafe_get(i)));
+            sb.append(String.format("%6.3f", get(i)));
             sb.append((i < length - 1 ? ", " : " "));
         }
         sb.append("]");
@@ -386,9 +576,9 @@ public abstract class AbstractVector implements Vector {
         }
     }
 
-    protected void ensureIndexInLength(int i) {
-        if (i >= length || i < 0) {
-            throw new IllegalArgumentException("Index out of bounds: " + i);
+    protected void ensureLengthIsNotNegative(int length) {
+        if (length < 0) {
+            throw new IllegalArgumentException("Wrong vector length: " + length);
         }
     }
 }

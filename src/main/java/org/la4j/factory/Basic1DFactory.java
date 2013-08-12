@@ -15,12 +15,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  * 
- * Contributor(s): -
+ * Contributor(s): Maxim Samoylov
  * 
  */
 
 package org.la4j.factory;
 
+import java.util.Arrays;
 import java.util.Random;
 
 import org.la4j.matrix.Matrix;
@@ -53,6 +54,15 @@ public class Basic1DFactory extends BasicFactory implements Factory {
 
     public Matrix createMatrix(MatrixSource source) {
         return new Basic1DMatrix(source);
+    }
+
+    @Override
+    public Matrix createConstantMatrix(int rows, int columns, double value) {
+
+        double array[] = new double[rows * columns];
+        Arrays.fill(array, value);
+
+        return new Basic1DMatrix(rows, columns, array);
     }
 
     @Override
@@ -102,5 +112,35 @@ public class Basic1DFactory extends BasicFactory implements Factory {
         }
 
         return new Basic1DMatrix(size, size, array);
+    }
+
+    @Override
+    public Matrix createBlockMatrix(Matrix a, Matrix b, Matrix c, Matrix d) {
+        if ((a.rows() != b.rows()) || (a.columns() != c.columns()) ||
+            (c.rows() != d.rows()) || (b.columns() != d.columns())) {
+            throw new IllegalArgumentException("Sides of blocks are incompatible!");
+        }
+
+        int rows = a.rows() + c.rows(), cols = a.columns() + b.columns();
+        double blockMatrix[] = new double[rows * cols];
+
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                if ((i < a.rows()) && (j < a.columns())) {
+                    blockMatrix[i * rows + j] = a.get(i, j);
+                }
+                if ((i < a.rows()) && (j > a.columns())) {
+                    blockMatrix[i * rows + j] = b.get(i, j);
+                }
+                if ((i > a.rows()) && (j < a.columns())) {
+                    blockMatrix[i * rows + j] = c.get(i, j);
+                }
+                if ((i > a.rows()) && (j > a.columns())) {
+                    blockMatrix[i * rows + j] = d.get(i, j);
+                }
+            }
+        }
+
+        return new Basic1DMatrix(rows, cols, blockMatrix);
     }
 }

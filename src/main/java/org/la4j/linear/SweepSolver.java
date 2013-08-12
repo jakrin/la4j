@@ -25,11 +25,29 @@ import org.la4j.factory.Factory;
 import org.la4j.matrix.Matrices;
 import org.la4j.matrix.Matrix;
 import org.la4j.vector.Vector;
+import org.la4j.vector.Vectors;
 
+/**
+ * This class represents <a
+ * href="http://en.wikipedia.org/wiki/Tridiagonal_matrix_algorithm"> Sweep (or
+ * Tridiagonal matrix, or Thomas) method </a> for solving linear systems.
+ */
 public class SweepSolver implements LinearSystemSolver {
 
     private static final long serialVersionUID = 4071505L;
 
+    /**
+     * Returns the solution for the given linear system
+     * <p>
+     * See <a href="http://en.wikipedia.org/wiki/Tridiagonal_matrix_algorithm">
+     * http://en.wikipedia.org/wiki/Tridiagonal_matrix_algorithm</a> for more
+     * details.
+     * </p>
+     * 
+     * @param linearSystem
+     * @param factory
+     * @return vector
+     */
     @Override
     public Vector solve(LinearSystem linearSystem, Factory factory) {
 
@@ -44,21 +62,21 @@ public class SweepSolver implements LinearSystemSolver {
 
         for (int i = 0; i < linearSystem.variables() - 1; i++) {
 
-            double maxItem = Math.abs(a.unsafe_get(i, i));
+            double maxItem = Math.abs(a.get(i, i));
             int maxIndex = i;
 
             for (int j = i + 1; j < linearSystem.variables(); j++) {
-                if (Math.abs(a.unsafe_get(j, i)) > maxItem) {
-                    maxItem = Math.abs(a.unsafe_get(j, i));
+                if (Math.abs(a.get(j, i)) > maxItem) {
+                    maxItem = Math.abs(a.get(j, i));
                     maxIndex = j;
                 }
             }
 
             if (maxIndex != i) {
                 for (int j = 0; j < linearSystem.variables(); j++) {
-                    double t = a.unsafe_get(i, j);
-                    a.unsafe_set(i, j, a.unsafe_get(maxIndex, j));
-                    a.unsafe_set(maxIndex, j, t);
+                    double t = a.get(i, j);
+                    a.set(i, j, a.get(maxIndex, j));
+                    a.set(maxIndex, j, t);
                 }
 
                 b.swap(i, maxIndex);
@@ -66,13 +84,12 @@ public class SweepSolver implements LinearSystemSolver {
 
             for (int j = i + 1; j < linearSystem.variables(); j++) {
 
-                double c = a.unsafe_get(j, i) / a.unsafe_get(i, i);
+                double c = a.get(j, i) / a.get(i, i);
                 for (int k = i; k < a.columns(); k++) {
-                    a.unsafe_set(j, k, a.unsafe_get(j, k) - a.unsafe_get(i, k) 
-                                 * c);
+                    a.update(j, k, Matrices.asMinusFunction(a.get(i, k) * c));
                 }
 
-                b.unsafe_set(j, b.unsafe_get(j) - b.unsafe_get(i) * c);
+                b.update(j, Vectors.asMinusFunction(b.get(i) * c));
             }
         }
 
@@ -81,15 +98,20 @@ public class SweepSolver implements LinearSystemSolver {
             double summand = 0.0;
 
             for (int j = i + 1; j < a.columns(); j++) {
-                summand += a.unsafe_get(i, j) * x.unsafe_get(j);
+                summand += a.get(i, j) * x.get(j);
             }
 
-            x.unsafe_set(i, (b.unsafe_get(i) - summand) / a.unsafe_get(i, i));
+            x.set(i, (b.get(i) - summand) / a.get(i, i));
         }
 
         return x;
     }
 
+    /**
+     * Checks whether this linear system can be solved by Sweep solver
+     * @param linearSystem
+     * @return <code>true</code> if given linear system can be solved by Sweep solver
+     */
     @Override
     public boolean suitableFor(LinearSystem linearSystem) {
         return linearSystem.coefficientsMatrix()

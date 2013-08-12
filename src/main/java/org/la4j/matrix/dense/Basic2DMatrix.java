@@ -25,10 +25,9 @@ import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 
-import org.la4j.factory.Basic2DFactory;
+import org.la4j.matrix.Matrices;
 import org.la4j.matrix.Matrix;
 import org.la4j.matrix.source.MatrixSource;
-import org.la4j.matrix.source.UnsafeMatrixSource;
 import org.la4j.vector.Vector;
 import org.la4j.vector.dense.BasicVector;
 
@@ -43,7 +42,7 @@ public class Basic2DMatrix extends AbstractBasicMatrix implements DenseMatrix {
     }
 
     public Basic2DMatrix(Matrix matrix) {
-        this(new UnsafeMatrixSource(matrix));
+        this(Matrices.asUnsafeSource(matrix));
     }
 
     public Basic2DMatrix(MatrixSource source) {
@@ -61,58 +60,24 @@ public class Basic2DMatrix extends AbstractBasicMatrix implements DenseMatrix {
     }
 
     public Basic2DMatrix(double array[][]) {
-        super(new Basic2DFactory(), array.length, array.length == 0 
+        super(Matrices.BASIC2D_FACTORY, array.length, array.length == 0 
                 ? 0: array[0].length);
 
         this.self = array;
     }
 
     @Override
-    public double unsafe_get(int i, int j) {
+    public double get(int i, int j) {
         return self[i][j];
     }
 
     @Override
-    public void unsafe_set(int i, int j, double value) {
+    public void set(int i, int j, double value) {
         self[i][j] = value;
     }
 
     @Override
-    public void resize(int rows, int columns) {
-
-        if (rows < 0 || columns < 0) {
-            throw new IllegalArgumentException("Wrong dimensions: " 
-                    + rows + "x" + columns);
-        }
-
-        if (this.rows == rows && this.columns == columns) {
-            return;
-        }
-
-        if (this.rows >= rows && this.columns >= columns) {
-            this.rows = rows;
-            this.columns = columns;
-
-            return;
-        }
-
-        double newSelf[][] = new double[rows][columns];
-
-        for (int i = 0; i < this.rows; i++) {
-            System.arraycopy(self[i], 0, newSelf[i], 0, this.columns);
-        }
-
-        this.rows = rows;
-        this.columns = columns;
-
-        self = newSelf;
-    }
-
-    @Override
     public void swapRows(int i, int j) {
-        ensureIndexInRows(i);
-        ensureIndexInRows(j);
-
         if (i != j) {
             double tmp[] = self[i];
             self[i] = self[j];
@@ -122,9 +87,6 @@ public class Basic2DMatrix extends AbstractBasicMatrix implements DenseMatrix {
 
     @Override
     public void swapColumns(int i, int j) {
-        ensureIndexInColumns(i);
-        ensureIndexInColumns(j);
-
         if (i != j) {
             for (int ii = 0; ii < rows; ii++) {
                 double tmp = self[ii][i];
@@ -136,13 +98,34 @@ public class Basic2DMatrix extends AbstractBasicMatrix implements DenseMatrix {
 
     @Override
     public Vector getRow(int i) {
-        ensureIndexInRows(i);
-
         double result[] = new double[columns];
 
         System.arraycopy(self[i], 0, result, 0, columns);
 
         return new BasicVector(result);
+    }
+
+    @Override
+    public Matrix copy() {
+        return new Basic2DMatrix(toArray());
+    }
+
+    @Override
+    public Matrix resize(int rows, int columns) {
+        ensureDimensionsAreNotNegative(rows, columns);
+
+        if (this.rows == rows && this.columns == columns) {
+            return copy();
+        }
+
+        double $self[][] = new double[rows][columns];
+
+        for (int i = 0; i < Math.min(this.rows, rows); i++) {
+            System.arraycopy(self[i], 0, $self[i], 0, 
+                             Math.min(this.columns, columns));
+        }
+
+        return new Basic2DMatrix($self);
     }
 
     @Override

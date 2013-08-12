@@ -15,14 +15,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  * 
- * Contributor(s): -
+ * Contributor(s): Maxim Samoylov
  * 
  */
 
 package org.la4j.factory;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Random;
 
+import org.la4j.matrix.Matrices;
 import org.la4j.matrix.Matrix;
 import org.la4j.matrix.source.MatrixSource;
 import org.la4j.matrix.sparse.CRSMatrix;
@@ -57,32 +60,76 @@ public class CRSFactory extends CompressedFactory implements Factory {
     }
 
     @Override
+    public Matrix createConstantMatrix(int rows, int columns, double value) {
+
+        int size = rows * columns;
+
+        double values[] = new double[size];
+        int columnIndices[] = new int[size];
+        int rowPointers[] = new int[rows + 1];
+
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < columns; j++) {
+                values[i * columns + j] = value;
+                columnIndices[i * columns + j] = j;
+            }
+            rowPointers[i] = columns * i;
+        }
+
+        rowPointers[rows] = size;
+
+        return new CRSMatrix(rows, columns, size, values, 
+                             columnIndices, rowPointers);
+    }
+
+    @Override
     public Matrix createRandomMatrix(int rows, int columns) {
-
-        // TODO: improve performance of this code
-        //       use raw structure
-
-        int cardinality = (rows * columns) / DENSITY;
 
         Random random = new Random();
 
-        Matrix matrix = new CRSMatrix(rows, columns, cardinality);
+        int cardinality = (rows * columns) / DENSITY;
 
-        for (int k = 0; k < cardinality; k++) {
-            int i = random.nextInt(rows);
-            int j = random.nextInt(columns);
+        double values[] = new double[cardinality];
+        int columnIndices[] = new int[cardinality];
+        int rowPointers[] = new int[rows + 1];
 
-            matrix.unsafe_set(i, j, random.nextDouble());
+        int kk = cardinality / rows;
+        int indices[] = new int[kk];
+
+        int k = 0;
+        for (int i = 0; i < rows; i++) {
+
+            rowPointers[i] = k;
+
+            for (int ii = 0; ii < kk; ii++) {
+                indices[ii] = random.nextInt(columns);
+            }
+
+            Arrays.sort(indices);
+
+            int previous = -1;
+            for (int ii = 0; ii < kk; ii++) {
+
+                if (indices[ii] == previous) {
+                    continue;
+                }
+
+                values[k] = random.nextDouble();
+                columnIndices[k++] = indices[ii];
+                previous = indices[ii];
+            }
         }
 
-        return matrix;
+        rowPointers[rows] = cardinality;
+
+        return new CRSMatrix(rows, columns, cardinality, values, 
+                             columnIndices, rowPointers);
     }
 
     @Override
     public Matrix createRandomSymmetricMatrix(int size) {
 
-        // TODO: improve performance of this code
-        //       use raw structure
+        // TODO: Issue 15
 
         int cardinality = (size * size) / DENSITY;
 
@@ -95,8 +142,8 @@ public class CRSFactory extends CompressedFactory implements Factory {
             int j = random.nextInt(size);
             double value = random.nextDouble();
             
-            matrix.unsafe_set(i, j, value);
-            matrix.unsafe_set(j, i, value);
+            matrix.set(i, j, value);
+            matrix.set(j, i, value);
         }
 
         return matrix;
@@ -115,13 +162,62 @@ public class CRSFactory extends CompressedFactory implements Factory {
         int rowPointers[] = new int[size + 1];
 
         for (int i = 0; i < size; i++) {
-            values[i] = (double) 1.0;
+            values[i] = 1.0;
             columnIndices[i] = i;
             rowPointers[i] = i;
         }
+
         rowPointers[size] = size;
 
         return new CRSMatrix(size, size, size, values, columnIndices,
                              rowPointers);
     }
+
+    @Override
+    public Matrix createBlockMatrix(Matrix a, Matrix b, Matrix c, Matrix d) {
+        if ((a.rows() != b.rows()) || (a.columns() != c.columns()) ||
+            (c.rows() != d.rows()) || (b.columns() != d.columns())) {
+            throw new IllegalArgumentException("Sides of blocks are incompatible!");
+        }
+
+        int rows = a.rows() + c.rows(), cols = a.columns() + b.columns();
+        ArrayList <Double>  values = new ArrayList <Double> ();
+        ArrayList <Integer> columnIndices = new ArrayList <Integer> ();
+        int rowPointers[] = new int[rows + 1];
+
+        int k = 0;
+        rowPointers[0] = 0;
+        double current = 0;
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                if ((i < a.rows()) && (j < a.columns())) {
+                    current = a.get(i, j);
+                }
+                if ((i < a.rows()) && (j > a.columns())) {
+                    current = b.get(i, j);
+                }
+                if ((i > a.rows()) && (j < a.columns())) {
+                    current = c.get(i, j);
+                }
+                if ((i > a.rows()) && (j > a.columns())) {
+                    current = d.get(i, j);
+                }
+                if (Math.abs(current) > Matrices.EPS) {
+                    values.add(new Double(current));
+                    columnIndices.add(new Integer(j));
+                    k++;
+                }
+            }
+            rowPointers[i + 1] = k;
+        }
+        double valuesArray[] = new double[values.size()];
+        int colIndArray[] = new int[columnIndices.size()];
+        for (int i = 0; i < values.size(); i++) {
+            valuesArray[i] = values.get(i).doubleValue();
+            colIndArray[i] = columnIndices.get(i).intValue();
+        }
+
+        return new CRSMatrix(rows, cols, k, valuesArray, colIndArray, rowPointers);
+    }
+
 }

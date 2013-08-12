@@ -26,12 +26,29 @@ import org.la4j.matrix.Matrices;
 import org.la4j.matrix.Matrix;
 import org.la4j.vector.Vector;
 
+/**  
+ * This class represents
+ * <a href="http://mathworld.wolfram.com/Gauss-SeidelMethod.html"> Seidel method
+ * </a> for solving linear systems.
+ */
 public class SeidelSolver implements LinearSystemSolver {
 
     private static final long serialVersionUID = 4071505L;
 
     private final static int MAX_ITERATIONS = 1000000;
 
+    /**
+     * Returns the solution for the given linear system
+     * <p>
+     * See <a href="http://mathworld.wolfram.com/Gauss-SeidelMethod.html">
+     * http://mathworld.wolfram.com/Gauss-SeidelMethod.html</a> for more
+     * details.
+     * </p>
+     * 
+     * @param linearSystem
+     * @param factory
+     * @return vector
+     */
     @Override
     public Vector solve(LinearSystem linearSystem, Factory factory) {
 
@@ -44,8 +61,9 @@ public class SeidelSolver implements LinearSystemSolver {
 
         for (int i = 0; i < a.rows(); i++) {
             for (int j = 0; j < a.columns(); j++) {
-                if (i != j)
-                    a.unsafe_set(i, j, a.unsafe_get(i, j) / a.unsafe_get(i, i));
+                if (i != j) {
+                    a.update(i, j, Matrices.asDivFunction(a.get(i, i)));
+                }
             }
         }
 
@@ -56,14 +74,14 @@ public class SeidelSolver implements LinearSystemSolver {
 
             for (int i = 0; i < a.rows(); i++) {
 
-                double summand = b.unsafe_get(i) / a.unsafe_get(i, i);
+                double summand = b.get(i) / a.get(i, i);
                 for (int j = 0; j < a.columns(); j++) {
                     if (i != j) {
-                        summand -= a.unsafe_get(i, j) * current.unsafe_get(j);
+                        summand -= a.get(i, j) * current.get(j);
                     }
                 }
 
-                current.unsafe_set(i, summand);
+                current.set(i, summand);
             }
 
             iteration++;
@@ -76,6 +94,11 @@ public class SeidelSolver implements LinearSystemSolver {
         return current;
     }
 
+    /**
+     * Checks whether this linear system can be solved by Seidel solver
+     * @param linearSystem
+     * @return <code>true</code> if given linear system can be solved by Seidel solver
+     */
     @Override
     public boolean suitableFor(LinearSystem linearSystem) {
 
@@ -86,11 +109,11 @@ public class SeidelSolver implements LinearSystemSolver {
             double sum = 0;
             for (int j = 0; j < a.columns(); j++) {
                 if (i != j) {
-                    sum += Math.abs(a.unsafe_get(i, j));
+                    sum += Math.abs(a.get(i, j));
                 }
             }
 
-            if (sum > Math.abs(a.unsafe_get(i, i)) - Matrices.EPS) {
+            if (sum > Math.abs(a.get(i, i)) - Matrices.EPS) {
                 return false;
             }
         }

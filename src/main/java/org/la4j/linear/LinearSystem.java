@@ -26,12 +26,15 @@ import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 
-import org.la4j.factory.Basic2DFactory;
 import org.la4j.factory.Factory;
 import org.la4j.matrix.Matrices;
 import org.la4j.matrix.Matrix;
 import org.la4j.vector.Vector;
 
+/**
+ * This class encapsulates the
+ * <a href="http://mathworld.wolfram.com/MatrixEquation.html"> Linear System.</a>
+ */
 public class LinearSystem implements Externalizable {
 
     private static final LinearSystemSolver SOLVERS[] = {
@@ -52,7 +55,7 @@ public class LinearSystem implements Externalizable {
     private Factory factory;
 
     public LinearSystem(Matrix a, Vector b) {
-        this(a, b, new Basic2DFactory(), null);
+        this(a, b, Matrices.DEFAULT_FACTORY, null);
     }
 
     public LinearSystem(Matrix a, Vector b, Factory factory) {
@@ -60,7 +63,7 @@ public class LinearSystem implements Externalizable {
     }
 
     public LinearSystem(Matrix a, Vector b, LinearSystemSolver solver) {
-        this(a, b, new Basic2DFactory(), solver);
+        this(a, b, Matrices.DEFAULT_FACTORY, solver);
     }
 
     public LinearSystem(Matrix a, Vector b, Factory factory, 
@@ -113,6 +116,9 @@ public class LinearSystem implements Externalizable {
         return solver.solve(this, factory);
     }
 
+    /**
+     * Checks whether <code>vector</code> is solution for this linear system.
+     */
     public boolean isSolution(Vector vector) {
 
         if (vector == null) {
@@ -127,7 +133,7 @@ public class LinearSystem implements Externalizable {
 
         boolean result = true;
         for (int i = 0; i < r.length(); i++) {
-            result = result && (Math.abs(r.unsafe_get(i)) < Matrices.EPS);
+            result = result && (Math.abs(r.get(i)) < Matrices.EPS);
         }
 
         return result;
